@@ -1,122 +1,171 @@
-import { createRequire } from 'module';
+import chalk from 'chalk';
+import ora from 'ora';
 
-const require = createRequire(import.meta.url);
-
-let chalk;
-try {
-  const chalkModule = await import('chalk');
-  chalk = chalkModule.default;
-} catch {
-  chalk = null;
-}
-
-function colorEnabled() {
-  return chalk !== null && process.env.NO_COLOR === undefined;
+function ce(enabled) {
+  return enabled !== false && process.env.NO_COLOR === undefined;
 }
 
 export const c = {
-  green: (s) => (colorEnabled() ? chalk.green(s) : s),
-  red: (s) => (colorEnabled() ? chalk.red(s) : s),
-  yellow: (s) => (colorEnabled() ? chalk.yellow(s) : s),
-  cyan: (s) => (colorEnabled() ? chalk.cyan(s) : s),
-  white: (s) => (colorEnabled() ? chalk.white(s) : s),
-  bold: (s) => (colorEnabled() ? chalk.bold(s) : s),
-  dim: (s) => (colorEnabled() ? chalk.dim(s) : s),
-  blue: (s) => (colorEnabled() ? chalk.blue(s) : s),
+  green:  (s) => ce() ? chalk.green(s)         : s,
+  red:    (s) => ce() ? chalk.red(s)            : s,
+  yellow: (s) => ce() ? chalk.yellow(s)         : s,
+  cyan:   (s) => ce() ? chalk.cyan(s)           : s,
+  blue:   (s) => ce() ? chalk.blue(s)           : s,
+  white:  (s) => ce() ? chalk.white(s)          : s,
+  bold:   (s) => ce() ? chalk.bold(s)           : s,
+  dim:    (s) => ce() ? chalk.dim(s)            : s,
+  magenta:(s) => ce() ? chalk.magenta(s)        : s,
+  bgBlue: (s) => ce() ? chalk.bgBlue.white.bold(s) : s,
+  italic: (s) => ce() ? chalk.italic(s)         : s,
 };
 
+const LOGO = `
+  ██████╗ ███████╗██████╗  ██████╗ ███████╗ ██████╗ ██████╗  ██████╗ ███████╗
+  ██╔══██╗██╔════╝██╔══██╗██╔═══██╗██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝
+  ██████╔╝█████╗  ██████╔╝██║   ██║█████╗  ██║   ██║██████╔╝██║  ███╗█████╗  
+  ██╔══██╗██╔══╝  ██╔═══╝ ██║   ██║██╔══╝  ██║   ██║██╔══██╗██║   ██║██╔══╝  
+  ██║  ██║███████╗██║     ╚██████╔╝██║     ╚██████╔╝██║  ██║╚██████╔╝███████╗
+  ╚═╝  ╚═╝╚══════╝╚═╝      ╚═════╝ ╚═╝      ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+`;
+
 export function printBanner(config) {
-  const model = config?.llm?.model || 'no model';
-  const repo = config?._session?.repo || 'none';
+  const model   = config?.llm?.model   || 'no model';
+  const repo    = config?._session?.repo || 'none';
+  const branch  = config?._session?.branch || config?.preferences?.default_branch || 'main';
+  const version = 'v1.0.0';
+
+  console.log(c.cyan(LOGO));
+  console.log(
+    '  ' +
+    c.bold(c.white('AI-powered GitHub CLI')) +
+    '  ' + c.dim('·') + '  ' +
+    c.dim(version) + '  ' + c.dim('·') + '  ' +
+    c.dim('model: ') + c.cyan(model)
+  );
+  console.log('');
+  console.log(
+    '  ' + c.dim('repo:') + ' ' + c.bold(repo) +
+    '   ' + c.dim('branch:') + ' ' + c.bold(branch)
+  );
+  console.log('');
+  printDivider();
+}
+
+export function printCompactHeader(config) {
+  const model  = config?.llm?.model || 'no model';
+  const repo   = config?._session?.repo || 'none';
   const branch = config?._session?.branch || config?.preferences?.default_branch || 'main';
-
-  const version = 'v1.0';
-  const topLine = `  RepoForge  ${version}  ●  ${model}  `;
-  const botLine = `  Repo: ${repo}  │  Branch: ${branch}  `;
-  const width = Math.max(topLine.length, botLine.length) + 2;
-  const bar = '─'.repeat(width);
-
-  console.log(c.cyan('┌' + bar + '┐'));
-  console.log(c.cyan('│') + c.bold(topLine.padEnd(width)) + c.cyan('│'));
-  console.log(c.cyan('│') + botLine.padEnd(width) + c.cyan('│'));
-  console.log(c.cyan('└' + bar + '┘'));
+  process.stdout.write(
+    c.cyan('  ◆ RepoForge') +
+    c.dim('  ' + model + '  ·  repo: ' + repo + '  ·  branch: ' + branch) +
+    '\n\n'
+  );
 }
 
 export function printDivider() {
-  console.log(c.dim('──────────────────────────────────────'));
+  console.log(c.dim('  ' + '─'.repeat(66)));
+}
+
+export function printTips() {
+  console.log(c.dim('  Tips:'));
+  console.log(c.dim('  › Type in plain English — "create a private repo called api-gateway"'));
+  console.log(c.dim('  › Use /help for slash commands  ·  /exit to quit'));
+  console.log('');
 }
 
 export function printActionPreview(intent, sessionConfig) {
-  const repo = intent.params?.repo || sessionConfig?.repo || 'not set';
+  const repo   = intent.params?.repo   || sessionConfig?.repo   || c.dim('from config');
   const branch = intent.params?.branch || sessionConfig?.branch || 'main';
 
   console.log('');
-  printDivider();
-  console.log(c.cyan('  ⚙  Action   : ') + c.bold(intent.action));
+  console.log(
+    '  ' + c.bgBlue(' ACTION ') + '  ' + c.bold(c.white(intent.action.replace(/_/g, ' ').toUpperCase()))
+  );
+  console.log('');
 
   const fields = [
-    ['Repo', repo],
-    ['Branch', branch],
-    ['Message', intent.params?.message],
-    ['Title', intent.params?.title],
-    ['Head', intent.params?.head],
-    ['Base', intent.params?.base],
+    ['Action',     intent.action],
+    ['Repo',       intent.params?.repo      || sessionConfig?.repo],
+    ['Branch',     branch],
+    ['Message',    intent.params?.message],
+    ['Title',      intent.params?.title],
+    ['Head',       intent.params?.head],
+    ['Base',       intent.params?.base],
     ['Visibility', intent.params?.visibility],
-    ['Target', intent.params?.target],
+    ['Target',     intent.params?.target],
   ];
 
   for (const [label, value] of fields) {
-    if (value && value !== 'not set') {
-      console.log(c.white(`     ${label.padEnd(10)}: `) + value);
+    if (value) {
+      console.log(
+        '  ' + c.dim(label.padEnd(12)) + c.white(value)
+      );
     }
   }
+  console.log('');
   printDivider();
 }
 
 export function printSuccess(msg) {
-  console.log(c.green('  ✔  ') + msg);
+  console.log(c.green('  ✓ ') + c.white(msg));
 }
 
 export function printError(msg) {
-  console.log(c.red('  ✗  ') + msg);
+  const lines = msg.split('\n');
+  console.log('');
+  console.log(c.red('  ✗ ') + c.bold(c.red(lines[0])));
+  for (const line of lines.slice(1)) {
+    if (line.trim()) console.log(c.dim('    ' + line.trim()));
+  }
+  console.log('');
 }
 
 export function printWarning(msg) {
-  console.log(c.yellow('  ⚠  ') + msg);
+  console.log(c.yellow('  ⚠ ') + c.yellow(msg));
 }
 
 export function printInfo(msg) {
-  console.log(c.white('     ') + msg);
+  console.log(c.dim('  · ') + c.white(msg));
 }
 
 export function printProgress(msg) {
-  console.log(c.cyan('  ⚙  ') + msg);
+  process.stdout.write(c.cyan('  ◆ ') + c.dim(msg) + '\n');
+}
+
+export function createSpinner(text) {
+  return ora({
+    text: c.dim(text),
+    prefixText: '  ',
+    spinner: 'dots',
+    color: 'cyan',
+  });
 }
 
 export function printHelp() {
   console.log('');
-  console.log(c.bold(c.cyan('  RepoForge — Slash Commands')));
-  printDivider();
+  console.log('  ' + c.bold(c.cyan('◆ Slash Commands')));
+  console.log('');
 
   const commands = [
-    ['/help', 'Show this help message'],
-    ['/repo [name]', 'Set active repository context'],
+    ['/help',          'Show this help'],
+    ['/repo [name]',   'Set active repository'],
     ['/branch [name]', 'Switch active branch'],
-    ['/status', 'Show current session status'],
-    ['/history', 'Show last 10 commands and results'],
-    ['/config', 'Show current configuration'],
-    ['/clear', 'Clear terminal output'],
-    ['/exit', 'Exit RepoForge session'],
+    ['/status',        'Show session status'],
+    ['/history',       'Show last 10 commands'],
+    ['/config',        'Show current config'],
+    ['/clear',         'Clear the terminal'],
+    ['/exit',          'Quit RepoForge'],
   ];
 
   for (const [cmd, desc] of commands) {
     console.log(
-      c.cyan('  ' + cmd.padEnd(20)) + c.white(desc)
+      '  ' + c.cyan(cmd.padEnd(18)) + c.dim(desc)
     );
   }
+
   console.log('');
-  console.log(c.bold(c.cyan('  Natural Language Examples')));
-  printDivider();
+  console.log('  ' + c.bold(c.cyan('◆ Natural Language Examples')));
+  console.log('');
 
   const examples = [
     'create a new private repo called api-gateway',
@@ -130,7 +179,7 @@ export function printHelp() {
   ];
 
   for (const ex of examples) {
-    console.log(c.dim('  > ') + c.white(ex));
+    console.log(c.dim('  > ') + c.italic(c.white(ex)));
   }
   console.log('');
 }
@@ -140,34 +189,35 @@ export function printVersion() {
 }
 
 export function printCliHelp() {
-  console.log(`
-${c.bold('RepoForge')} — AI-powered GitHub CLI
+  console.log('');
+  console.log(c.bold(c.cyan('  ◆ RepoForge')) + c.dim(' — AI-powered GitHub CLI  v1.0.0'));
+  console.log('');
+  console.log(c.bold('  USAGE'));
+  console.log(c.dim('  ──────────────────────────────────────────'));
+  console.log('  repoforge                      ' + c.dim('Start interactive REPL'));
+  console.log('  repoforge "your prompt"        ' + c.dim('One-shot command'));
+  console.log('  echo "prompt" | repoforge      ' + c.dim('Pipe mode'));
+  console.log('  repoforge init                 ' + c.dim('Run setup wizard'));
+  console.log('  repoforge config               ' + c.dim('Show current config'));
+  console.log('');
+  console.log(c.bold('  FLAGS'));
+  console.log(c.dim('  ──────────────────────────────────────────'));
 
-${c.bold('USAGE')}
-  repoforge                     Start interactive REPL session
-  repoforge "your prompt here"  Execute a single natural language command
-  echo "prompt" | repoforge     Pipe mode for automation
+  const flags = [
+    ['--version, -v',    'Show version'],
+    ['--help, -h',       'Show this help'],
+    ['--repo, -r [n]',   'Set repo context'],
+    ['--no-confirm',     'Skip confirmation prompts'],
+    ['--dry-run',        'Preview without executing'],
+    ['--raw',            'Show raw API response JSON'],
+    ['--model [name]',   'Override LLM model'],
+    ['--endpoint [url]', 'Override LM Studio endpoint'],
+    ['--verbose',        'Show full execution trace'],
+    ['--history',        'Show command history'],
+  ];
 
-${c.bold('FLAGS')}
-  --version, -v         Show version number
-  --help, -h            Show this help text
-  --repo, -r [name]     Set repo context for this run
-  --no-confirm          Skip confirmation prompts
-  --dry-run             Show what would happen, don't execute
-  --raw                 Show raw API response JSON
-  --model [name]        Override LLM model for this run
-  --endpoint [url]      Override LM Studio endpoint
-  --verbose             Show full execution trace
-  --history             Show command history
-
-${c.bold('COMMANDS')}
-  repoforge init        Run the interactive setup wizard
-  repoforge config      Show current configuration
-
-${c.bold('EXAMPLES')}
-  ${c.dim('$')} repoforge
-  ${c.dim('$')} repoforge "create a new private repo called my-api"
-  ${c.dim('$')} repoforge --dry-run "push to origin main"
-  ${c.dim('$')} echo "list all my repos" | repoforge
-`);
+  for (const [flag, desc] of flags) {
+    console.log('  ' + c.cyan(flag.padEnd(22)) + c.dim(desc));
+  }
+  console.log('');
 }

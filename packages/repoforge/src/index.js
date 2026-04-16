@@ -8,8 +8,10 @@ import {
   printCliHelp,
   printBanner,
   printDivider,
+  printWarning,
+  printInfo,
 } from './cli/renderer.js';
-import { getRecentHistory, loadHistory, printHistory } from './history/logger.js';
+import { loadHistory, printHistory } from './history/logger.js';
 
 export async function main() {
   const flags = parseFlags();
@@ -27,19 +29,18 @@ export async function main() {
   const subcommand = process.argv[2];
 
   if (subcommand === 'init') {
-    const config = loadConfig();
-    await runInit(flags);
+    await runInit();
     process.exit(0);
   }
 
   if (subcommand === 'config') {
     const config = loadConfig();
     printBanner(config);
-    printDivider();
-    console.log(c.cyan('\n  Current Configuration:\n'));
-    const display = { ...config };
-    if (display.github?.token) {
-      display.github = { ...display.github, token: display.github.token.slice(0, 4) + '...' };
+    console.log('  ' + c.bold(c.cyan('◆ Configuration')));
+    console.log('');
+    const display = JSON.parse(JSON.stringify(config));
+    if (display.github?.token && display.github.token.length > 4) {
+      display.github.token = display.github.token.slice(0, 4) + '••••••••';
     }
     console.log(
       JSON.stringify(display, null, 2)
@@ -47,39 +48,27 @@ export async function main() {
         .map((l) => '  ' + l)
         .join('\n')
     );
+    console.log('');
     printDivider();
     process.exit(0);
   }
 
   if (flags.history) {
-    const items = loadHistory().reverse();
+    const items = loadHistory().reverse().slice(0, 50);
     printDivider();
-    console.log(c.bold(c.cyan('  Command History\n')));
-    printHistory(items.slice(0, 50), c);
+    console.log('');
+    console.log('  ' + c.bold(c.cyan('◆ Command History')));
+    console.log('');
+    printHistory(items, c);
     printDivider();
     process.exit(0);
   }
 
   const config = loadConfig();
 
-  if (flags.model) {
-    config.llm.model = flags.model;
-  }
-  if (flags.endpoint) {
-    config.llm.endpoint = flags.endpoint;
-  }
-  if (flags.noConfirm) {
-    config.preferences.confirm_before_execute = false;
-  }
-
-  if (!configExists()) {
-    printBanner(config);
-    console.log(
-      c.yellow('\n  ⚠  No config found. Run ') +
-        c.cyan('repoforge init') +
-        c.yellow(' to set up RepoForge.\n')
-    );
-  }
+  if (flags.model)    config.llm.model    = flags.model;
+  if (flags.endpoint) config.llm.endpoint = flags.endpoint;
+  if (flags.noConfirm) config.preferences.confirm_before_execute = false;
 
   const isPiped = !process.stdin.isTTY;
 
@@ -91,7 +80,7 @@ export async function main() {
     const input = Buffer.concat(chunks).toString('utf8').trim();
     if (input) {
       const session = {
-        repo: flags.repo || null,
+        repo:   flags.repo || null,
         branch: config.preferences.default_branch || 'main',
       };
       config._session = session;
@@ -102,7 +91,7 @@ export async function main() {
 
   if (flags.prompt) {
     const session = {
-      repo: flags.repo || null,
+      repo:   flags.repo || null,
       branch: config.preferences.default_branch || 'main',
     };
     config._session = session;
