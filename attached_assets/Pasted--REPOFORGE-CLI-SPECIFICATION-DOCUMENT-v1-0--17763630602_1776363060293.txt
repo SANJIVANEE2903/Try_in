@@ -1,0 +1,444 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REPOFORGE — CLI SPECIFICATION DOCUMENT v1.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. OVERVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RepoForge is an AI-powered CLI tool that translates
+natural language commands into GitHub operations.
+It runs in the terminal, communicates with a local
+LLM via LM Studio, and executes actions through
+the GitHub REST/GraphQL API via n8n workflows.
+
+Interaction model:
+  Similar to Claude CLI and Gemini CLI —
+  user types a plain English prompt,
+  the tool interprets it, confirms the action,
+  and executes it with real-time feedback.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. INSTALLATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Install globally via npm:
+
+  npm install -g repoforge
+
+Verify install:
+
+  repoforge --version
+
+First-time setup wizard:
+
+  repoforge init
+
+  This runs an interactive setup that collects:
+  - GitHub Personal Access Token (or OAuth flow)
+  - LM Studio endpoint URL (default: localhost:1234)
+  - Preferred LLM model name
+  - Default working directory
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. CONFIG FILE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Location: ~/.repoforge/config.json
+
+Schema:
+
+  {
+    "github": {
+      "token": "ghp_xxxxxxxxxxxx",
+      "username": "your-github-username",
+      "default_visibility": "private"
+    },
+    "llm": {
+      "provider": "lmstudio",
+      "endpoint": "http://localhost:1234/v1",
+      "model": "mistral-7b-instruct",
+      "temperature": 0.2
+    },
+    "n8n": {
+      "webhook_base_url": "http://localhost:5678/webhook"
+    },
+    "preferences": {
+      "confirm_before_execute": true,
+      "show_raw_api_response": false,
+      "output_color": true,
+      "default_branch": "main"
+    }
+  }
+
+Notes:
+  - confirm_before_execute: if true, RepoForge
+    always shows the parsed action and asks
+    "Proceed? (y/n)" before running anything
+  - temperature: keep low (0.1–0.3) for
+    deterministic command parsing
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. ENTRY POINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4.1 Interactive Mode (default)
+────────────────────────────────
+
+  repoforge
+
+  Launches a persistent REPL-style session.
+  User gets a prompt and can type commands
+  continuously without re-invoking the tool.
+
+  Terminal UI:
+
+  ┌─────────────────────────────────────────┐
+  │  RepoForge  v1.0  ●  mistral-7b         │
+  │  Repo: my-project  │  Branch: main      │
+  └─────────────────────────────────────────┘
+  > _
+
+  Status bar shows: active repo, branch,
+  LLM model, connection status.
+
+4.2 One-shot Mode
+────────────────────────────────
+
+  repoforge "commit all changes with message fix: auth bug"
+
+  Executes a single command and exits.
+  Useful for scripting or aliases.
+
+4.3 Pipe Mode
+────────────────────────────────
+
+  echo "push to origin" | repoforge
+
+  Accepts stdin for automation pipelines.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. COMMAND REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5.1 Natural Language Commands (core feature)
+────────────────────────────────────────────
+
+  These are not typed commands — they are
+  freeform English inputs parsed by the LLM.
+
+  Examples:
+
+  > create a new private repo called api-gateway
+  > commit everything with message "feat: add login"
+  > push to origin main
+  > open a PR from dev to main titled "Add auth flow"
+  > pull latest from upstream
+  > list all my repos
+  > delete the branch old-feature
+  > show me open PRs on this repo
+  > clone auth-service repo to current directory
+
+  Flow for each natural language input:
+  1. Input sent to LLM via LM Studio endpoint
+  2. LLM returns structured intent JSON
+  3. RepoForge parses intent into API action
+  4. If confirm_before_execute is true → shows
+     preview and asks for confirmation
+  5. Action sent to n8n webhook
+  6. n8n executes GitHub API call
+  7. Real-time response streamed back via WebSocket
+  8. Output rendered in terminal
+
+5.2 Built-in Slash Commands
+────────────────────────────────
+
+  These bypass the LLM and run directly.
+
+  /help               Show all slash commands
+  /repo [name]        Set active repo context
+  /branch [name]      Switch active branch
+  /status             Show current repo git status
+  /history            Show last 10 commands + results
+  /config             Open config in editor
+  /clear              Clear terminal output
+  /exit               Exit RepoForge session
+
+5.3 CLI Flags
+────────────────────────────────
+
+  repoforge [options] [prompt]
+
+  --version, -v       Show version number
+  --help, -h          Show help text
+  --repo, -r [name]   Set repo context for this run
+  --no-confirm        Skip confirmation prompts
+  --dry-run           Show what would happen,
+                      don't execute
+  --raw               Show raw API response JSON
+  --model [name]      Override LLM model for this run
+  --endpoint [url]    Override LM Studio endpoint
+  --verbose           Show full execution trace
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. INTENT PARSING — LLM CONTRACT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The LLM must return a structured JSON object.
+RepoForge sends a system prompt that enforces
+this schema on every call.
+
+System prompt (sent with every LLM request):
+
+  "You are a GitHub CLI assistant. Parse the
+  user's natural language input and return ONLY
+  a JSON object with this schema. No explanation,
+  no markdown, just raw JSON.
+
+  {
+    "action": "<string>",
+    "params": {
+      "repo": "<string or null>",
+      "branch": "<string or null>",
+      "message": "<string or null>",
+      "title": "<string or null>",
+      "base": "<string or null>",
+      "head": "<string or null>",
+      "visibility": "<public|private|null>",
+      "target": "<string or null>"
+    },
+    "confidence": <0.0–1.0>,
+    "clarification_needed": <true|false>,
+    "clarification_prompt": "<string or null>"
+  }
+
+  Valid actions:
+  create_repo, commit, push, pull, create_pr,
+  list_repos, list_prs, delete_branch,
+  clone_repo, merge_pr, close_pr, get_status"
+
+Confidence threshold:
+  - >= 0.75 → proceed to execution
+  - 0.5–0.74 → show parsed intent, ask user
+    to confirm before running
+  - < 0.5 → ask user to rephrase
+
+If clarification_needed is true:
+  RepoForge prints the clarification_prompt
+  and waits for user input before proceeding.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. EXECUTION FLOW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  User Input
+      │
+      ▼
+  Sent to LM Studio /v1/chat/completions
+      │
+      ▼
+  Parse JSON intent from LLM response
+      │
+      ├── confidence < 0.5 → ask to rephrase
+      │
+      ├── clarification_needed → prompt user
+      │
+      └── confidence >= 0.75
+              │
+              ▼
+          Show action preview
+              │
+              ├── confirm_before_execute: true
+              │     → "Proceed? (y/n)"
+              │
+              └── confirmed / no-confirm flag
+                      │
+                      ▼
+                  POST to n8n webhook
+                  /webhook/repoforge/{action}
+                      │
+                      ▼
+                  n8n calls GitHub API
+                      │
+                      ▼
+                  WebSocket streams result
+                  back to terminal
+                      │
+                      ▼
+                  Output rendered
+                  Result logged to history
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. OUTPUT FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All output follows this structure:
+
+  [Action preview]
+  ──────────────────────────────────
+  ⚙  Action   : commit
+     Message  : fix: auth bug
+     Repo     : my-project
+     Branch   : main
+  ──────────────────────────────────
+  Proceed? (y/n): y
+
+  [Execution output — streamed]
+  ✔  Staged all changes
+  ✔  Committed: fix: auth bug
+  ✔  Pushed to origin/main
+  ✔  Done  (1.3s)
+
+Color coding:
+  ✔ Green   — success
+  ✗ Red     — error / failure
+  ⚠ Yellow  — warning / low confidence
+  ⚙ Cyan    — action in progress
+  ─ White   — info / neutral
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. ERROR STATES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Error                   Message shown to user
+─────────────────────────────────────────────────
+LM Studio unreachable   ✗ Cannot reach LLM at
+                          localhost:1234.
+                          Run: repoforge config
+                          to update the endpoint.
+
+GitHub token invalid    ✗ GitHub auth failed.
+                          Run: repoforge init
+                          to re-authenticate.
+
+Low LLM confidence      ⚠ Not sure what you mean.
+                          Did you mean: [best guess]?
+                          Rephrase or type /help.
+
+n8n webhook timeout     ✗ Workflow timed out.
+                          Check n8n is running at
+                          localhost:5678.
+
+No repo context set     ⚠ No active repo selected.
+                          Use /repo [name] to set one.
+
+GitHub API rate limit   ✗ GitHub API rate limit hit.
+                          Resets at: [time].
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10. COMMAND HISTORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Stored at: ~/.repoforge/history.json
+
+Schema per entry:
+
+  {
+    "id": "uuid",
+    "timestamp": "ISO-8601",
+    "raw_input": "user's original text",
+    "parsed_action": "commit",
+    "params": { ... },
+    "status": "success | failed | cancelled",
+    "output": "terminal output string",
+    "duration_ms": 1340
+  }
+
+Access via:
+  /history              Show last 10 in terminal
+  repoforge --history   Full log in terminal
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+11. n8n WEBHOOK CONTRACT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RepoForge POSTs to:
+  POST /webhook/repoforge/{action}
+
+Payload:
+
+  {
+    "action": "create_pr",
+    "github_token": "ghp_xxx",
+    "params": {
+      "repo": "my-project",
+      "head": "dev",
+      "base": "main",
+      "title": "Add auth flow",
+      "body": ""
+    }
+  }
+
+n8n responds with:
+
+  {
+    "status": "success | error",
+    "message": "PR #42 created",
+    "url": "https://github.com/user/repo/pull/42",
+    "data": { ... }
+  }
+
+One n8n workflow per action type:
+  repoforge/create_repo
+  repoforge/commit
+  repoforge/push
+  repoforge/pull
+  repoforge/create_pr
+  repoforge/list_repos
+  repoforge/list_prs
+  repoforge/delete_branch
+  repoforge/clone_repo
+  repoforge/merge_pr
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. FILE STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+repoforge/
+├── bin/
+│   └── repoforge.js          # Entry point
+├── src/
+│   ├── cli/
+│   │   ├── repl.js           # Interactive REPL
+│   │   ├── flags.js          # CLI flag parser
+│   │   └── renderer.js       # Terminal output
+│   ├── llm/
+│   │   ├── client.js         # LM Studio API calls
+│   │   ├── prompt.js         # System prompt builder
+│   │   └── parser.js         # JSON intent parser
+│   ├── github/
+│   │   └── webhooks.js       # n8n webhook dispatch
+│   ├── websocket/
+│   │   └── stream.js         # Real-time output feed
+│   ├── config/
+│   │   ├── loader.js         # Read/write config.json
+│   │   └── init.js           # Setup wizard
+│   └── history/
+│       └── logger.js         # Command history log
+├── package.json
+└── README.md
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+13. KNOWN CONSTRAINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- LM Studio must be running locally before
+  invoking RepoForge
+- n8n must be running locally on port 5678
+- GitHub token needs repo, workflow, and
+  pull_request scopes
+- No internet LLM fallback in v1 —
+  local model only
+- clone_repo requires git to be installed
+  and in PATH
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+14. V2 ROADMAP (OUT OF SCOPE FOR NOW)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Cloud LLM fallback (OpenAI / Anthropic)
+- Multi-account GitHub support
+- Plugin system for custom n8n workflows
+- Web dashboard companion
+- Team shared history / audit log
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

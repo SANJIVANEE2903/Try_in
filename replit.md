@@ -25,3 +25,29 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## Packages
+
+### `packages/repoforge` — RepoForge CLI
+
+AI-powered CLI tool that translates natural language commands into GitHub operations.
+
+**Run with:** `node packages/repoforge/bin/repoforge.js`
+
+**Install globally:** `npm install -g repoforge` or `cd packages/repoforge && npm link`
+
+**Architecture:**
+- `bin/repoforge.js` — Entry point
+- `src/index.js` — Main entry, flag parsing, mode dispatch
+- `src/cli/flags.js` — CLI flag parser (minimist)
+- `src/cli/renderer.js` — Terminal output, colors (chalk), banner
+- `src/cli/repl.js` — Interactive REPL + NL processing pipeline
+- `src/llm/client.js` — LM Studio API client
+- `src/llm/prompt.js` — System prompt + message builder
+- `src/llm/parser.js` — JSON intent parser + validation
+- `src/github/webhooks.js` — n8n webhook dispatch + result formatting
+- `src/config/loader.js` — Config read/write (`~/.repoforge/config.json`)
+- `src/config/init.js` — Interactive setup wizard
+- `src/history/logger.js` — Command history (`~/.repoforge/history.json`)
+
+**Dependencies:** chalk, inquirer, minimist, ora, uuid, ws
