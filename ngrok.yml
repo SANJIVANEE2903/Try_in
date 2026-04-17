@@ -1,0 +1,10 @@
+version: "2"
+
+tunnels:
+  lmstudio:
+    proto: http
+    addr: 1234
+
+  n8n:
+    proto: http
+    addr: 5678
