@@ -16,8 +16,37 @@ import {
   printCompactHeader,
   printDivider,
   printTips,
+  printDebug,
   createSpinner,
 } from './renderer.js';
+
+const MIN_INPUT_LENGTH = 3;
+
+const EXAMPLE_COMMANDS = [
+  'list repos',
+  'create repo <name>',
+  'create pr from <branch> to main',
+  'delete branch <name>',
+  'commit with message "your message"',
+];
+
+function validateInput(input) {
+  if (!input || input.trim().length === 0) {
+    return { valid: false, reason: 'empty' };
+  }
+
+  const trimmed = input.trim();
+
+  if (trimmed.length < MIN_INPUT_LENGTH) {
+    return { valid: false, reason: 'too_short' };
+  }
+
+  if (/^[^a-zA-Z]+$/.test(trimmed)) {
+    return { valid: false, reason: 'no_words' };
+  }
+
+  return { valid: true };
+}
 
 export async function runRepl(config, flags = {}) {
   const session = {
@@ -58,6 +87,16 @@ export async function runRepl(config, flags = {}) {
     if (input.startsWith('/')) {
       const handled = await handleSlash(input, session, config, rl, flags);
       if (!handled) running = false;
+      continue;
+    }
+
+    const validation = validateInput(input);
+    if (!validation.valid) {
+      console.log('');
+      printWarning('Invalid command. Try:');
+      for (const ex of EXAMPLE_COMMANDS) {
+        console.log(c.dim('    › ') + c.italic(c.white(ex)));
+      }
       continue;
     }
 
@@ -110,6 +149,7 @@ async function handleSlash(input, session, config, rl, flags) {
       printInfo(`LLM      ${c.bold(config.llm.endpoint)}`);
       printInfo(`n8n      ${c.bold(config.n8n.webhook_base_url)}`);
       printInfo(`Confirm  ${c.bold(config.preferences.confirm_before_execute ? 'yes' : 'no')}`);
+      printInfo(`Debug    ${c.bold(flags.debug ? 'on' : 'off')}`);
       console.log('');
       break;
 
@@ -166,6 +206,13 @@ export async function processNaturalLanguage(input, config, session, flags = {},
   let status      = 'failed';
   let outputLines = [];
 
+  const validation = validateInput(input);
+  if (!validation.valid) {
+    console.log('');
+    printWarning('Invalid command. Try: ' + EXAMPLE_COMMANDS.join(', '));
+    return;
+  }
+
   const spinner = createSpinner('Thinking...');
 
   try {
@@ -181,12 +228,19 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
     intent = parseIntent(raw);
 
+    if (flags.debug) {
+      printDebug('PARSED INTENT', {
+        action:     intent.action,
+        params:     intent.params,
+        confidence: intent.confidence,
+      });
+    }
+
     if (intent.confidence < 0.5) {
-      printWarning(`Not sure what you mean. (confidence: ${(intent.confidence * 100).toFixed(0)}%)`);
-      if (intent.action) {
-        printWarning(`Did you mean: ${c.bold(intent.action.replace(/_/g, ' '))}?`);
-      }
-      printInfo('Try rephrasing, or type /help for examples.');
+      printWarning(
+        `Not sure what you mean. (confidence: ${(intent.confidence * 100).toFixed(0)}%)\n` +
+        `Try: ${EXAMPLE_COMMANDS.slice(0, 3).join(', ')}`
+      );
       appendHistory({
         raw_input: input, parsed_action: intent?.action || 'unknown',
         params: intent?.params || {}, status: 'cancelled',
@@ -253,11 +307,11 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     const execSpinner = createSpinner(`Running ${intent.action.replace(/_/g, ' ')}...`);
     execSpinner.start();
 
-    const result = await dispatchAction(intent, config, session, flags.verbose);
+    const result = await dispatchAction(intent, config, session, flags.verbose, flags.debug);
     execSpinner.stop();
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    const lines = formatWebhookResult(result);
+    const lines    = formatWebhookResult(result, intent.action);
 
     console.log('');
     for (const line of lines) {
@@ -268,7 +322,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     printSuccess(`Done in ${duration}s`);
     status = 'success';
 
-    if (flags.raw) {
+    if (flags.raw && !flags.debug) {
       console.log('');
       printInfo(c.dim('Raw response:'));
       console.log(
@@ -285,17 +339,17 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       printError(err.message);
     } else {
       printError(err.message || 'An unexpected error occurred.');
-      if (flags.verbose) console.error(err);
+      if (flags.verbose || flags.debug) console.error(err);
     }
     status = 'failed';
   }
 
   appendHistory({
-    raw_input: input,
-    parsed_action: intent?.action || 'unknown',
-    params:        intent?.params || {},
+    raw_input:      input,
+    parsed_action:  intent?.action || 'unknown',
+    params:         intent?.params || {},
     status,
-    output:        outputLines.join('\n'),
-    duration_ms:   Date.now() - startTime,
+    output:         outputLines.join('\n'),
+    duration_ms:    Date.now() - startTime,
   });
 }

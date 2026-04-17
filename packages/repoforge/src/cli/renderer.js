@@ -6,17 +6,17 @@ function ce(enabled) {
 }
 
 export const c = {
-  green:  (s) => ce() ? chalk.green(s)         : s,
-  red:    (s) => ce() ? chalk.red(s)            : s,
-  yellow: (s) => ce() ? chalk.yellow(s)         : s,
-  cyan:   (s) => ce() ? chalk.cyan(s)           : s,
-  blue:   (s) => ce() ? chalk.blue(s)           : s,
-  white:  (s) => ce() ? chalk.white(s)          : s,
-  bold:   (s) => ce() ? chalk.bold(s)           : s,
-  dim:    (s) => ce() ? chalk.dim(s)            : s,
-  magenta:(s) => ce() ? chalk.magenta(s)        : s,
-  bgBlue: (s) => ce() ? chalk.bgBlue.white.bold(s) : s,
-  italic: (s) => ce() ? chalk.italic(s)         : s,
+  green:  (s) => ce() ? chalk.green(s)            : s,
+  red:    (s) => ce() ? chalk.red(s)              : s,
+  yellow: (s) => ce() ? chalk.yellow(s)           : s,
+  cyan:   (s) => ce() ? chalk.cyan(s)             : s,
+  blue:   (s) => ce() ? chalk.blue(s)             : s,
+  white:  (s) => ce() ? chalk.white(s)            : s,
+  bold:   (s) => ce() ? chalk.bold(s)             : s,
+  dim:    (s) => ce() ? chalk.dim(s)              : s,
+  magenta:(s) => ce() ? chalk.magenta(s)          : s,
+  bgBlue: (s) => ce() ? chalk.bgBlue.white.bold(s): s,
+  italic: (s) => ce() ? chalk.italic(s)           : s,
 };
 
 const LOGO = `
@@ -69,7 +69,7 @@ export function printDivider() {
 export function printTips() {
   console.log(c.dim('  Tips:'));
   console.log(c.dim('  › Type in plain English — "create a private repo called api-gateway"'));
-  console.log(c.dim('  › Use /help for slash commands  ·  /exit to quit'));
+  console.log(c.dim('  › Use /help for slash commands  ·  /exit to quit  ·  --debug for full logs'));
   console.log('');
 }
 
@@ -107,15 +107,15 @@ export function printActionPreview(intent, sessionConfig) {
 }
 
 export function printSuccess(msg) {
-  console.log(c.green('  ✓ ') + c.white(msg));
+  console.log(c.green('  ✅ ') + c.white(msg));
 }
 
 export function printError(msg) {
   const lines = msg.split('\n');
   console.log('');
-  console.log(c.red('  ✗ ') + c.bold(c.red(lines[0])));
+  console.log(c.red('  ❌ Failed: ') + c.bold(c.red(lines[0])));
   for (const line of lines.slice(1)) {
-    if (line.trim()) console.log(c.dim('    ' + line.trim()));
+    if (line.trim()) console.log(c.dim('     ' + line.trim()));
   }
   console.log('');
 }
@@ -130,6 +130,20 @@ export function printInfo(msg) {
 
 export function printProgress(msg) {
   process.stdout.write(c.cyan('  ◆ ') + c.dim(msg) + '\n');
+}
+
+export function printDebug(label, data) {
+  const border = c.dim('  ' + '┄'.repeat(58));
+  console.log('');
+  console.log(border);
+  console.log(c.cyan('  [debug] ') + c.bold(label));
+  console.log(border);
+  const lines = JSON.stringify(data, null, 2).split('\n');
+  for (const line of lines) {
+    console.log(c.dim('  ') + c.dim(line));
+  }
+  console.log(border);
+  console.log('');
 }
 
 export function createSpinner(text) {
@@ -168,11 +182,11 @@ export function printHelp() {
   console.log('');
 
   const examples = [
+    'list all my repos',
     'create a new private repo called api-gateway',
+    'open a PR from dev to main titled "Add auth flow"',
     'commit everything with message "feat: add login"',
     'push to origin main',
-    'open a PR from dev to main titled "Add auth flow"',
-    'list all my repos',
     'delete the branch old-feature',
     'show me open PRs on this repo',
     'clone auth-service repo to current directory',
@@ -181,6 +195,13 @@ export function printHelp() {
   for (const ex of examples) {
     console.log(c.dim('  > ') + c.italic(c.white(ex)));
   }
+  console.log('');
+  console.log('  ' + c.bold(c.cyan('◆ CLI Flags')));
+  console.log('');
+  console.log('  ' + c.cyan('--debug'.padEnd(18))   + c.dim('Show full request + response JSON'));
+  console.log('  ' + c.cyan('--dry-run'.padEnd(18)) + c.dim('Preview action without executing'));
+  console.log('  ' + c.cyan('--verbose'.padEnd(18)) + c.dim('Show execution trace'));
+  console.log('  ' + c.cyan('--no-confirm'.padEnd(18)) + c.dim('Skip confirmation prompts'));
   console.log('');
 }
 
@@ -210,6 +231,7 @@ export function printCliHelp() {
     ['--no-confirm',     'Skip confirmation prompts'],
     ['--dry-run',        'Preview without executing'],
     ['--raw',            'Show raw API response JSON'],
+    ['--debug, -d',      'Show full request + response JSON'],
     ['--model [name]',   'Override LLM model'],
     ['--endpoint [url]', 'Override LM Studio endpoint'],
     ['--verbose',        'Show full execution trace'],
