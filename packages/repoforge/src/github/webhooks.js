@@ -11,8 +11,7 @@ export class WebhookError extends Error {
 export async function dispatchAction(intent, config, sessionContext = {}, verbose = false, debug = false) {
   const baseUrl = config.n8n.webhook_base_url;
   const action  = intent.action;
-  // Single webhook endpoint — action is routed via body.action field
-  const url     = `${baseUrl}/repoforge`;
+  const url     = `${baseUrl}/repoforge/${action}`;
 
   const repo   = intent.params.repo   || sessionContext.repo   || null;
   const branch = intent.params.branch || sessionContext.branch || config.preferences.default_branch;
