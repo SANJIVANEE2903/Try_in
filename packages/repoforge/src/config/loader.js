@@ -20,6 +20,10 @@ export const DEFAULT_CONFIG = {
   n8n: {
     webhook_base_url: 'http://localhost:5678/webhook',
   },
+  graphify: {
+    enabled: false,
+    graph_path: 'graphify-out/graph.json',
+  },
   preferences: {
     confirm_before_execute: true,
     show_raw_api_response: false,

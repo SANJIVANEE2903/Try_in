@@ -1,6 +1,7 @@
 import readline from 'readline';
 import { callLLM, LLMError } from '../llm/client.js';
 import { parseIntent } from '../llm/parser.js';
+import { buildGraphifyEnhancedInput, getGraphifyContext } from '../graphify/context.js';
 import { dispatchAction, formatWebhookResult, WebhookError } from '../github/webhooks.js';
 import { appendHistory, getRecentHistory, printHistory } from '../history/logger.js';
 import {
@@ -219,7 +220,13 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     console.log('');
     spinner.start();
 
-    const raw = await callLLM(input, config, session);
+    const graphifyContext = await getGraphifyContext(input, config);
+    if (flags.debug && graphifyContext) {
+      printDebug('GRAPHIFY CONTEXT USED', graphifyContext);
+    }
+
+    const llmInput = buildGraphifyEnhancedInput(input, graphifyContext);
+    const raw = await callLLM(llmInput, config, session);
     spinner.stop();
 
     if (flags.verbose) {

@@ -45,9 +45,12 @@ AI-powered CLI tool that translates natural language commands into GitHub operat
 - `src/llm/client.js` — LM Studio API client
 - `src/llm/prompt.js` — System prompt + message builder
 - `src/llm/parser.js` — JSON intent parser + validation
+- `src/graphify/context.js` — Optional Graphify query context layer before LLM parsing
 - `src/github/webhooks.js` — n8n webhook dispatch + result formatting
 - `src/config/loader.js` — Config read/write (`~/.repoforge/config.json`)
 - `src/config/init.js` — Interactive setup wizard
 - `src/history/logger.js` — Command history (`~/.repoforge/history.json`)
 
 **Dependencies:** chalk, inquirer, minimist, ora, uuid, ws
+
+**Optional Graphify context:** Set `graphify.enabled` in `~/.repoforge/config.json` to `true` to run `graphify query "<prompt>" --graph graphify-out/graph.json` before LLM parsing. The query output is prepended to the user prompt and debug mode prints `GRAPHIFY CONTEXT USED` when context is available.
