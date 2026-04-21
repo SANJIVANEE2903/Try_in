@@ -66,9 +66,22 @@ export async function main() {
 
   const config = loadConfig();
 
-  if (flags.model)    config.llm.model    = flags.model;
+  if (flags.model) config.llm.model = flags.model;
   if (flags.endpoint) config.llm.endpoint = flags.endpoint;
   if (flags.noConfirm) config.preferences.confirm_before_execute = false;
+
+  if (flags.prompt) {
+    const session = {
+      repo: flags.repo || null,
+      branch: config.preferences.default_branch || 'main',
+    };
+    config._session = session;
+    // Execute the first command
+    await processNaturalLanguage(flags.prompt, config, session, flags);
+    // Then continue into REPL for more commands
+    await runRepl(config, flags);
+    return;
+  }
 
   const isPiped = !process.stdin.isTTY;
 
@@ -80,22 +93,12 @@ export async function main() {
     const input = Buffer.concat(chunks).toString('utf8').trim();
     if (input) {
       const session = {
-        repo:   flags.repo || null,
+        repo: flags.repo || null,
         branch: config.preferences.default_branch || 'main',
       };
       config._session = session;
       await processNaturalLanguage(input, config, session, flags);
     }
-    process.exit(0);
-  }
-
-  if (flags.prompt) {
-    const session = {
-      repo:   flags.repo || null,
-      branch: config.preferences.default_branch || 'main',
-    };
-    config._session = session;
-    await processNaturalLanguage(flags.prompt, config, session, flags);
     process.exit(0);
   }
 

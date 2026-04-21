@@ -28,7 +28,7 @@ const EXAMPLE_COMMANDS = [
   'create repo <name>',
   'create pr from <branch> to main',
   'delete branch <name>',
-  'commit with message "your message"',
+  'commit and push with message "your message"',
 ];
 
 function validateInput(input) {
@@ -215,6 +215,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
   }
 
   const spinner = createSpinner('Thinking...');
+  let execSpinner = null;
 
   try {
     console.log('');
@@ -234,6 +235,10 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     }
 
     intent = parseIntent(raw);
+
+    if (intent.action === 'commit' || intent.action === 'push') {
+      intent.action = 'commit_and_push';
+    }
 
     if (flags.debug) {
       printDebug('PARSED INTENT', {
@@ -279,43 +284,17 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
     printActionPreview(intent, session);
 
-    const shouldConfirm =
-      !flags.noConfirm &&
-      config.preferences.confirm_before_execute &&
-      intent.confidence >= 0.75;
-
-    if (shouldConfirm) {
-      let answer;
-      if (rl) {
-        answer = await new Promise((resolve) =>
-          rl.question(c.white('  Proceed? ') + c.dim('(y/n) ') + c.cyan('❯ '), resolve)
-        );
-      } else {
-        answer = 'y';
-      }
-
-      if (answer.trim().toLowerCase() !== 'y') {
-        printInfo('Cancelled.');
-        appendHistory({
-          raw_input: input, parsed_action: intent.action,
-          params: intent.params, status: 'cancelled',
-          output: 'User cancelled', duration_ms: Date.now() - startTime,
-        });
-        return;
-      }
-    }
-
     if (!config.github.token) {
       printError('GitHub token not configured.\nRun: repoforge init to authenticate.');
       return;
     }
 
     console.log('');
-    const execSpinner = createSpinner(`Running ${intent.action.replace(/_/g, ' ')}...`);
+    execSpinner = createSpinner(`Processing ${intent.action.replace(/_/g, ' ')}...`);
     execSpinner.start();
 
     const result = await dispatchAction(intent, config, session, flags.verbose, flags.debug);
-    execSpinner.stop();
+    execSpinner.succeed('Done');
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     const lines    = formatWebhookResult(result, intent.action);
@@ -323,9 +302,14 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     console.log('');
     for (const line of lines) {
       outputLines.push(line);
-      printSuccess(line);
+      if (line.trim().startsWith('•') || line.trim().startsWith('…') || line.trim().match(/^\d+\./)) {
+        console.log('  ' + c.cyan(line));
+      } else {
+        console.log('  ' + c.white(line));
+      }
     }
 
+    console.log('');
     printSuccess(`Done in ${duration}s`);
     status = 'success';
 
@@ -342,6 +326,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
   } catch (err) {
     spinner.stop();
+    if (execSpinner) execSpinner.fail('Failed');
     if (err instanceof LLMError || err instanceof WebhookError) {
       printError(err.message);
     } else {

@@ -18,7 +18,7 @@ export const SYSTEM_PROMPT = `You are a GitHub CLI assistant. Parse the user's n
 }
 
 Valid actions:
-create_repo, commit, push, pull, create_pr, list_repos, list_prs, delete_branch, clone_repo, merge_pr, close_pr, get_status
+create_repo, commit_and_push, push, pull, create_pr, list_repos, list_prs, delete_branch, clone_repo, merge_pr, close_pr, get_status
 
 Rules:
 - confidence must be a number between 0.0 and 1.0

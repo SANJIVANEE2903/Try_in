@@ -128,37 +128,82 @@ export function formatWebhookResult(data, action) {
   const lines = [];
 
   if (data.message) lines.push(data.message);
-  if (data.url)     lines.push(`URL: ${data.url}`);
+  if (data.url && action !== 'list_repos' && action !== 'list_prs') lines.push(`URL: ${data.url}`);
 
-  if (data.data && typeof data.data === 'object') {
-    const d = data.data;
+  const payloadData = data.data || data.result;
+
+  if (payloadData && typeof payloadData === 'object') {
+    const d = Array.isArray(payloadData) ? payloadData 
+            : (Array.isArray(payloadData.repos) ? payloadData.repos 
+            : (Array.isArray(payloadData.prs) ? payloadData.prs 
+            : (Array.isArray(payloadData.branches) ? payloadData.branches 
+            : (Array.isArray(payloadData.commits) ? payloadData.commits 
+            : (Array.isArray(payloadData.items) ? payloadData.items : payloadData)))));
 
     if (Array.isArray(d)) {
-      if (d.length === 0) {
+      if (d.length === 0 || (d.length === 1 && Object.keys(d[0]).length === 0)) {
         lines.push('No results found.');
       } else {
-        lines.push(`Found ${d.length} item${d.length !== 1 ? 's' : ''}:`);
-        d.slice(0, 20).forEach((item) => {
-          if (typeof item === 'string') {
-            lines.push(`  • ${item}`);
-          } else if (item.full_name || item.name) {
+        if (action === 'list_repos') {
+          lines.push(`Found ${d.length} repositor${d.length !== 1 ? 'ies' : 'y'}:`);
+          d.slice(0, 5).forEach((item, idx) => {
             const vis = item.private ? 'private' : 'public';
             const updated = item.updated_at ? ` · updated ${new Date(item.updated_at).toLocaleDateString()}` : '';
-            lines.push(`  • ${item.full_name || item.name}  (${vis})${updated}`);
-          }
-        });
-        if (d.length > 20) lines.push(`  … and ${d.length - 20} more`);
+            lines.push(`  ${idx + 1}. ${item.full_name || item.name}  (${vis})${updated}`);
+          });
+          if (d.length > 5) lines.push(`  ...and ${d.length - 5} more`);
+        } else if (action === 'list_prs') {
+          lines.push(`Found ${d.length} pull request${d.length !== 1 ? 's' : ''}:`);
+          d.slice(0, 5).forEach((item) => {
+            const state = item.state === 'open' ? '🟢 open' : (item.state === 'closed' && item.merged_at ? '🟣 merged' : '🔴 closed');
+            lines.push(`  • [${state}] #${item.number} ${item.title}`);
+            if (item.html_url) lines.push(`      ${item.html_url}`);
+          });
+          if (d.length > 5) lines.push(`  ...and ${d.length - 5} more`);
+        } else {
+          lines.push(`Found ${d.length} item${d.length !== 1 ? 's' : ''}:`);
+          d.slice(0, 5).forEach((item) => {
+            if (typeof item === 'string') {
+              lines.push(`  • ${item}`);
+            } else if (item.full_name || item.name || item.title) {
+              const nameLabel = item.full_name || item.name || item.title;
+              lines.push(`  • ${nameLabel}`);
+            }
+          });
+          if (d.length > 5) lines.push(`  ...and ${d.length - 5} more`);
+        }
       }
     } else {
-      if (d.html_url)   lines.push(`URL: ${d.html_url}`);
-      if (d.number)     lines.push(`PR #${d.number}`);
-      if (d.sha)        lines.push(`SHA: ${d.sha.slice(0, 7)}`);
-      if (d.full_name)  lines.push(`Repo: ${d.full_name}`);
-      if (d.clone_url)  lines.push(`Clone: ${d.clone_url}`);
+      if (action === 'get_status') {
+        if (d.name || d.full_name) {
+           const vis = d.private !== undefined ? (d.private ? 'private' : 'public') : '';
+           lines.push(`  • Repository: ${d.full_name || d.name} ${vis ? `(${vis})` : ''}`);
+        }
+        if (d.default_branch) lines.push(`  • Branch: ${d.default_branch}`);
+        if (d.stargazers_count !== undefined) lines.push(`  • Stars: ${d.stargazers_count}`);
+        if (d.forks_count !== undefined)      lines.push(`  • Forks: ${d.forks_count}`);
+        if (d.open_issues_count !== undefined) lines.push(`  • Open Issues: ${d.open_issues_count}`);
+        if (d.html_url)                        lines.push(`  • URL: ${d.html_url}`);
+      } else {
+        if (d.name || d.title || d.full_name) {
+          const vis = d.private !== undefined ? (d.private ? 'private' : 'public') : '';
+          const nameLabel = d.full_name || d.name || d.title;
+          lines.push(`  • ${nameLabel}${vis ? `  (${vis})` : ''}`);
+        }
+        
+        const url = d.html_url || d.url;
+        if (url)         lines.push(`  • URL: ${url}`);
+        if (d.number)    lines.push(`  • Issue/PR #${d.number}`);
+        if (d.state)     lines.push(`  • State: ${d.state}`);
+        if (d.sha)       lines.push(`  • SHA: ${d.sha.slice(0, 7)}`);
+        if (d.clone_url) lines.push(`  • Clone: ${d.clone_url}`);
+        
+        if (lines.length === 0 && Object.keys(d).length > 0) {
+          lines.push(`  • Success (executed)`);
+        }
+      }
     }
   }
-
-  if (lines.length === 0) lines.push('Action completed successfully.');
 
   return lines;
 }

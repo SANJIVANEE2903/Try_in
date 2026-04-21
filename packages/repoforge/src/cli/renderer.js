@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import ora from 'ora';
+import gradient from 'gradient-string';
 
 function ce(enabled) {
   return enabled !== false && process.env.NO_COLOR === undefined;
@@ -34,18 +34,18 @@ export function printBanner(config) {
   const branch  = config?._session?.branch || config?.preferences?.default_branch || 'main';
   const version = 'v1.0.0';
 
-  console.log(c.cyan(LOGO));
+  console.log(gradient.pastel.multiline(LOGO));
   console.log(
     '  ' +
-    c.bold(c.white('AI-powered GitHub CLI')) +
+    c.bold(c.white('RepoForge AI - Control GitHub with natural language')) +
     '  ' + c.dim('·') + '  ' +
     c.dim(version) + '  ' + c.dim('·') + '  ' +
     c.dim('model: ') + c.cyan(model)
   );
   console.log('');
   console.log(
-    '  ' + c.dim('repo:') + ' ' + c.bold(repo) +
-    '   ' + c.dim('branch:') + ' ' + c.bold(branch)
+    '  ' + c.dim('repo:') + ' ' + c.cyan(repo) +
+    '   ' + c.dim('branch:') + ' ' + c.cyan(branch)
   );
   console.log('');
   printDivider();
@@ -78,25 +78,35 @@ export function printActionPreview(intent, sessionConfig) {
   const branch = intent.params?.branch || sessionConfig?.branch || 'main';
 
   console.log('');
+
+  if (intent.explanation) {
+    console.log('  ' + c.yellow('💡 ') + c.italic(c.dim(intent.explanation)));
+    console.log('');
+  }
+
+  const actionTitle = intent.action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   console.log(
-    '  ' + c.bgBlue(' ACTION ') + '  ' + c.bold(c.white(intent.action.replace(/_/g, ' ').toUpperCase()))
+    '  ' + c.bgBlue(' ACTION ') + '  ' + c.bold(c.white(actionTitle))
   );
   console.log('');
 
+  const visibilityStr = intent.params?.visibility ? ` ${c.magenta(`(${intent.params.visibility})`)}` : '';
+  const repoDisplay = repo + visibilityStr;
+
   const fields = [
     ['Action',     intent.action],
-    ['Repo',       intent.params?.repo      || sessionConfig?.repo],
+    ['Repo',       repoDisplay],
     ['Branch',     branch],
     ['Message',    intent.params?.message],
     ['Title',      intent.params?.title],
     ['Head',       intent.params?.head],
     ['Base',       intent.params?.base],
-    ['Visibility', intent.params?.visibility],
+    ['Visibility', intent.params?.visibility ? c.magenta(intent.params.visibility) : null],
     ['Target',     intent.params?.target],
   ];
 
   for (const [label, value] of fields) {
-    if (value) {
+    if (value && label !== 'Visibility' || (label === 'Visibility' && intent.params?.visibility && !repoDisplay.includes(intent.params.visibility))) {
       console.log(
         '  ' + c.dim(label.padEnd(12)) + c.white(value)
       );
@@ -107,15 +117,20 @@ export function printActionPreview(intent, sessionConfig) {
 }
 
 export function printSuccess(msg) {
-  console.log(c.green('  ✅ ') + c.white(msg));
+  console.log(c.green('  ✅ ') + c.white('Action completed successfully.'));
+  if (msg) console.log('     ' + c.dim(msg));
 }
 
 export function printError(msg) {
   const lines = msg.split('\n');
   console.log('');
-  console.log(c.red('  ❌ Failed: ') + c.bold(c.red(lines[0])));
-  for (const line of lines.slice(1)) {
-    if (line.trim()) console.log(c.dim('     ' + line.trim()));
+  console.log(c.red('  ❌ Error: ') + c.white(lines[0]));
+  if (lines.length > 1) {
+    for (const line of lines.slice(1)) {
+      if (line.trim() && !line.includes('Error:') && !line.includes('stack')) {
+         console.log(c.dim('     ' + line.trim()));
+      }
+    }
   }
   console.log('');
 }
@@ -146,13 +161,72 @@ export function printDebug(label, data) {
   console.log('');
 }
 
+const SPINNER_FRAMES = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+  const toHex = (x) => Math.round(255 * x).toString(16).padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
+function waveRainbow(text, phase) {
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    const hue = ((i * 360 / text.length) + phase) % 360;
+    result += chalk.hex(hslToHex(hue, 100, 65))(text[i]);
+  }
+  return result;
+}
+
 export function createSpinner(text) {
-  return ora({
-    text: c.dim(text),
-    prefixText: '  ',
-    spinner: 'dots',
-    color: 'cyan',
-  });
+  let interval = null;
+  let frameIdx = 0;
+  const isTTY = process.stderr.isTTY;
+
+  return {
+    start() {
+      if (!isTTY) {
+        process.stderr.write('  ⏳ ' + text + '\n');
+        return this;
+      }
+      process.stderr.write('\x1B[?25l');
+      interval = setInterval(() => {
+        const phase = (frameIdx * 12) % 360;
+        const frame = SPINNER_FRAMES[frameIdx % SPINNER_FRAMES.length];
+        const coloredFrame = chalk.hex(hslToHex((phase + 180) % 360, 100, 65))(frame);
+        const coloredText = waveRainbow(text, phase);
+        process.stderr.write(`\r  ${coloredFrame} ${coloredText}  `);
+        frameIdx++;
+      }, 80);
+      return this;
+    },
+
+    stop() {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+      if (isTTY) {
+        process.stderr.write('\r\x1B[K\x1B[?25h');
+      }
+      return this;
+    },
+
+    succeed(msg) {
+      this.stop();
+      process.stderr.write('  ' + chalk.green('✔') + ' ' + chalk.green(msg || text) + '\n');
+      return this;
+    },
+
+    fail(msg) {
+      this.stop();
+      process.stderr.write('  ' + chalk.red('✖') + ' ' + chalk.red(msg || text) + '\n');
+      return this;
+    },
+  };
 }
 
 export function printHelp() {
