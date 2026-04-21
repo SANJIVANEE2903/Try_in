@@ -19,7 +19,10 @@ import {
   printTips,
   printDebug,
   createSpinner,
+  printStage,
 } from './renderer.js';
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const MIN_INPUT_LENGTH = 3;
 
@@ -214,12 +217,25 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     return;
   }
 
-  const spinner = createSpinner('Thinking...');
+  const spinner = createSpinner('🧠 Understanding your request...');
   let execSpinner = null;
+
+  if (rl) {
+    // Attempt to erase the prompt line to prevent duplicate input display
+    readline.moveCursor(process.stdout, 0, -1);
+    readline.clearLine(process.stdout, 0);
+  }
+
+  const innerLen = input.length + 4;
+  console.log('');
+  console.log('  ╭' + '─'.repeat(innerLen) + '╮');
+  console.log('  │ ' + c.cyan('❯ ') + input + ' │');
+  console.log('  ╰' + '─'.repeat(innerLen) + '╯');
 
   try {
     console.log('');
     spinner.start();
+    await sleep(300); // Stage 1 Cinematic Delay
 
     const graphifyContext = await getGraphifyContext(input, config);
     if (flags.debug && graphifyContext) {
@@ -228,7 +244,6 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
     const llmInput = buildGraphifyEnhancedInput(input, graphifyContext);
     const raw = await callLLM(llmInput, config, session);
-    spinner.stop();
 
     if (flags.verbose) {
       printInfo(c.dim('LLM raw → ' + raw));
@@ -249,6 +264,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     }
 
     if (intent.confidence < 0.5) {
+      spinner.stopAndClear();
       printWarning(
         `Not sure what you mean. (confidence: ${(intent.confidence * 100).toFixed(0)}%)\n` +
         `Try: ${EXAMPLE_COMMANDS.slice(0, 3).join(', ')}`
@@ -262,6 +278,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     }
 
     if (intent.clarification_needed && intent.clarification_prompt) {
+      spinner.stopAndClear();
       console.log('');
       printWarning(intent.clarification_prompt);
       if (rl) {
@@ -277,10 +294,15 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     }
 
     if (flags.dryRun) {
+      spinner.stopAndClear();
       printActionPreview(intent, session);
       console.log(c.yellow('  [dry-run] Action previewed — nothing was executed.\n'));
       return;
     }
+
+    spinner.stopAndClear();
+    printStage(`🔍 Interpreting intent → ${c.bold(intent.action)}`);
+    await sleep(300); // Stage 2 Cinematic Delay
 
     printActionPreview(intent, session);
 
@@ -290,11 +312,19 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     }
 
     console.log('');
-    execSpinner = createSpinner(`Processing ${intent.action.replace(/_/g, ' ')}...`);
+    execSpinner = createSpinner(`⚡ Sending request to n8n...`);
     execSpinner.start();
+    await sleep(300); // Stage 3 Cinematic Delay 1
+
+    execSpinner.text(`🌐 Connecting to GitHub...`);
+    await sleep(200); // Stage 3 Cinematic Delay 2
 
     const result = await dispatchAction(intent, config, session, flags.verbose, flags.debug);
-    execSpinner.succeed('Done');
+    
+    execSpinner.text(`📦 Processing response...`);
+    await sleep(300); // Stage 4 Cinematic Delay
+    
+    execSpinner.stopAndClear();
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     const lines    = formatWebhookResult(result, intent.action);
@@ -324,16 +354,30 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       );
     }
 
+    console.log('');
+    console.log('  ' + c.dim('─────────────────────────────'));
   } catch (err) {
     spinner.stop();
     if (execSpinner) execSpinner.fail('Failed');
+    
+    let errMsg = err.message || 'An unexpected error occurred.';
+    if (config.github && config.github.token) {
+      errMsg = errMsg.split(config.github.token).join('••••••••');
+    }
+
     if (err instanceof LLMError || err instanceof WebhookError) {
-      printError(err.message);
+      printError(errMsg);
     } else {
-      printError(err.message || 'An unexpected error occurred.');
-      if (flags.verbose || flags.debug) console.error(err);
+      printError(errMsg);
+      if (flags.verbose || flags.debug) {
+        console.error(err.stack ? err.stack.split(config.github?.token).join('••••••••') : err);
+      }
     }
     status = 'failed';
+    outputLines.push('Error: ' + errMsg);
+
+    console.log('');
+    console.log('  ' + c.dim('─────────────────────────────'));
   }
 
   appendHistory({

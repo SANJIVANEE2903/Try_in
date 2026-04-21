@@ -83,7 +83,7 @@ export async function dispatchAction(intent, config, sessionContext = {}, verbos
 
     if (response.status === 401 || response.status === 403) {
       throw new WebhookError(
-        `GitHub auth failed.\nRun: repoforge init to re-authenticate.`,
+        `GitHub auth failed. Your token might be invalid or expired.\nPlease delete ~/.repoforge/config.json and restart to re-authenticate.`,
         'github_auth_failed'
       );
     }

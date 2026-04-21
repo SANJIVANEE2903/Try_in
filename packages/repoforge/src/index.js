@@ -1,6 +1,7 @@
 import { parseFlags } from './cli/flags.js';
 import { loadConfig, configExists } from './config/loader.js';
 import { runInit } from './config/init.js';
+import { ensureAuthenticated } from './config/auth.js';
 import { runRepl, processNaturalLanguage } from './cli/repl.js';
 import {
   c,
@@ -69,6 +70,8 @@ export async function main() {
   if (flags.model) config.llm.model = flags.model;
   if (flags.endpoint) config.llm.endpoint = flags.endpoint;
   if (flags.noConfirm) config.preferences.confirm_before_execute = false;
+
+  await ensureAuthenticated(config);
 
   if (flags.prompt) {
     const session = {

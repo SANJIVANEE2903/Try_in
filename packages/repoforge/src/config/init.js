@@ -2,7 +2,7 @@ import readline from 'readline';
 import { loadConfig, saveConfig, DEFAULT_CONFIG } from './loader.js';
 import { c, printBanner, printDivider, printSuccess, printInfo } from '../cli/renderer.js';
 
-function promptLine(rl, question, defaultVal = '') {
+export function promptLine(rl, question, defaultVal = '') {
   return new Promise((resolve) => {
     const hint = defaultVal ? c.dim(` [${defaultVal}]`) : '';
     rl.question(`\n  ${c.dim('›')} ${question}${hint}\n  ${c.cyan('❯')} `, (answer) => {
@@ -11,7 +11,7 @@ function promptLine(rl, question, defaultVal = '') {
   });
 }
 
-function promptSecret(rl, question) {
+export function promptSecret(rl, question) {
   return new Promise((resolve) => {
     process.stdout.write(`\n  ${c.dim('›')} ${question}\n  ${c.cyan('❯')} `);
 

@@ -147,6 +147,10 @@ export function printProgress(msg) {
   process.stdout.write(c.cyan('  ◆ ') + c.dim(msg) + '\n');
 }
 
+export function printStage(msg) {
+  process.stdout.write(`\r\x1B[K  ${c.dim('⋮')} ${c.white(msg)}\n`);
+}
+
 export function printDebug(label, data) {
   const border = c.dim('  ' + '┄'.repeat(58));
   console.log('');
@@ -181,12 +185,21 @@ function waveRainbow(text, phase) {
   return result;
 }
 
-export function createSpinner(text) {
+export function createSpinner(initialText) {
   let interval = null;
   let frameIdx = 0;
+  let text = initialText;
   const isTTY = process.stderr.isTTY;
 
   return {
+    text(newText) {
+      text = newText;
+      if (!isTTY) {
+        process.stderr.write('  ⏳ ' + text + '\n');
+      }
+      return this;
+    },
+
     start() {
       if (!isTTY) {
         process.stderr.write('  ⏳ ' + text + '\n');
@@ -226,6 +239,17 @@ export function createSpinner(text) {
       process.stderr.write('  ' + chalk.red('✖') + ' ' + chalk.red(msg || text) + '\n');
       return this;
     },
+    
+    stopAndClear() {
+      if (interval) {
+        clearInterval(interval);
+        interval = null;
+      }
+      if (isTTY) {
+        process.stderr.write('\r\x1B[K\x1B[?25h');
+      }
+      return this;
+    }
   };
 }
 
