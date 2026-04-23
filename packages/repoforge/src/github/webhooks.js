@@ -27,9 +27,11 @@ export async function dispatchAction(intent, config, sessionContext = {}, verbos
     default_visibility: intent.params.visibility || config.github.default_visibility,
   };
 
+  // Flatten params to top level so n8n nodes can access $json.body.owner, $json.body.repo directly
   const payload = {
     action,
     github_token: config.github.token,
+    ...params,
     params,
   };
 

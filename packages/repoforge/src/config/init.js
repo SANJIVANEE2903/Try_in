@@ -68,7 +68,6 @@ export async function runInit() {
     console.log('\n  ' + c.bold(c.white('GitHub')));
 
     const token    = await promptLine(rl, 'Personal Access Token' + c.dim(' (needs repo + pull_request scopes)'), config.github.token || '');
-    const username = await promptLine(rl, 'GitHub Username', config.github.username || '');
     const visibility = await promptLine(rl, 'Default repo visibility', config.github.default_visibility || 'private');
 
     console.log('\n  ' + c.bold(c.white('LM Studio')));
@@ -89,7 +88,7 @@ export async function runInit() {
     const newConfig = {
       github: {
         token,
-        username,
+        username: config.github.username || '',
         default_visibility: visibility === 'public' ? 'public' : 'private',
       },
       llm: {

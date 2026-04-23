@@ -5,7 +5,38 @@ import { promptSecret } from './init.js';
 
 export async function ensureAuthenticated(config) {
   if (config.github && config.github.token && config.github.token.trim() !== '') {
-    return; // Already authenticated
+    if (!config._token_validated) {
+      try {
+        const response = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `token ${config.github.token}`,
+            'User-Agent': 'RepoForge-CLI',
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        
+        if (response.ok) {
+          const userData = await response.json();
+          if (userData && userData.login && config.github.username !== userData.login) {
+            config.github.username = userData.login;
+            saveConfig(config);
+          }
+          config._token_validated = true;
+          return;
+        } else if (response.status === 401) {
+          printError('Invalid GitHub token');
+          config.github.token = ''; // Clear token to force re-authentication below
+        } else {
+          config._token_validated = true;
+          return;
+        }
+      } catch (err) {
+        config._token_validated = true;
+        return;
+      }
+    } else {
+      return;
+    }
   }
 
   console.log('');
