@@ -1,4 +1,5 @@
 import readline from 'readline';
+import { execSync } from 'child_process';
 import { callLLM, LLMError } from '../llm/client.js';
 import { parseIntent } from '../llm/parser.js';
 import { buildGraphifyEnhancedInput, getGraphifyContext } from '../graphify/context.js';
@@ -311,6 +312,106 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       return;
     }
 
+    // ── Local git commit_and_push ──────────────────────────────────
+    if (intent.action === 'commit_and_push') {
+      console.log('');
+      execSpinner = createSpinner('🔍 Checking local Git repository...');
+      execSpinner.start();
+      await sleep(300);
+
+      try {
+        execSync('git rev-parse --is-inside-work-tree', { stdio: 'pipe' });
+      } catch {
+        execSpinner.fail('Not a Git repo');
+        printError('Not inside a Git repository. Run this inside your project folder.');
+        appendHistory({
+          raw_input: input, parsed_action: intent.action,
+          params: intent.params || {}, status: 'failed',
+          output: 'Not inside a Git repository', duration_ms: Date.now() - startTime,
+        });
+        return;
+      }
+
+      const commitMsg = intent.params?.message || intent.params?.commit_message || 'Update via RepoForge';
+
+      execSpinner.text('📂 Staging all changes...');
+      await sleep(200);
+
+      try {
+        execSync('git add .', { stdio: 'pipe' });
+      } catch (e) {
+        execSpinner.fail('Stage failed');
+        printError('Failed to stage files: ' + e.message);
+        return;
+      }
+
+      execSpinner.text(`💾 Committing: "${commitMsg}"...`);
+      await sleep(200);
+
+      let commitOutput = '';
+      try {
+        commitOutput = execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { stdio: 'pipe', encoding: 'utf-8' });
+      } catch (e) {
+        const stderr = e.stderr?.toString() || e.message;
+        if (stderr.includes('nothing to commit')) {
+          execSpinner.stopAndClear();
+          printWarning('Nothing to commit — working tree is clean.');
+          appendHistory({
+            raw_input: input, parsed_action: intent.action,
+            params: intent.params || {}, status: 'success',
+            output: 'Nothing to commit', duration_ms: Date.now() - startTime,
+          });
+          return;
+        }
+        execSpinner.fail('Commit failed');
+        printError('Git commit failed: ' + stderr);
+        return;
+      }
+
+      execSpinner.text('🚀 Pushing to remote...');
+      await sleep(200);
+
+      let pushOutput = '';
+      try {
+        pushOutput = execSync('git push', { stdio: 'pipe', encoding: 'utf-8' });
+      } catch (e) {
+        const stderr = e.stderr?.toString() || e.message;
+        execSpinner.fail('Push failed');
+        printError('Git push failed: ' + stderr);
+        return;
+      }
+
+      execSpinner.stopAndClear();
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      const lines = commitOutput.trim().split('\n');
+
+      console.log('');
+      console.log('  ' + c.bold(c.green('✔ Committed & Pushed Successfully')));
+      console.log('');
+      console.log('  ' + c.cyan('  Message:  ') + c.white(commitMsg));
+      for (const line of lines) {
+        if (line.trim()) {
+          console.log('  ' + c.dim('  ' + line.trim()));
+        }
+      }
+      console.log('');
+      printSuccess(`Done in ${duration}s`);
+      status = 'success';
+      outputLines.push('Committed and pushed: ' + commitMsg);
+
+      console.log('');
+      console.log('  ' + c.dim('─────────────────────────────'));
+
+      appendHistory({
+        raw_input: input, parsed_action: intent.action,
+        params: intent.params || {}, status,
+        output: outputLines.join('\n'), duration_ms: Date.now() - startTime,
+      });
+      return;
+    }
+
+    // ── n8n webhook dispatch (all other actions) ──────────────────
     console.log('');
     execSpinner = createSpinner(`⚡ Sending request to n8n...`);
     execSpinner.start();
