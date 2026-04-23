@@ -365,6 +365,17 @@ export async function processNaturalLanguage(input, config, session, flags = {},
         return;
       }
 
+      let repoName = null;
+      try {
+        const remoteUrl = execSync('git config --get remote.origin.url', { stdio: 'pipe', encoding: 'utf-8' }).trim();
+        if (remoteUrl) {
+          const parts = remoteUrl.split('/');
+          repoName = parts[parts.length - 1].replace(/\.git$/, '');
+        }
+      } catch (e) {
+        // no remote configured
+      }
+
       const commitMsg = intent.params?.message || intent.params?.commit_message || 'Update via RepoForge';
 
       execSpinner.text('📂 Staging all changes...');
@@ -419,22 +430,36 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       const lines = commitOutput.trim().split('\n');
 
+      let branchName = session.branch;
+      try {
+        branchName = execSync('git branch --show-current', { stdio: 'pipe', encoding: 'utf-8' }).trim() || session.branch;
+      } catch (e) {}
+
       console.log('');
       console.log('  ' + c.bold(c.green('✔ Committed & Pushed Successfully')));
       console.log('');
-      console.log('  ' + c.cyan('  Message:  ') + c.white(commitMsg));
-      for (const line of lines) {
-        if (line.trim()) {
-          console.log('  ' + c.dim('  ' + line.trim()));
-        }
+      if (repoName) {
+        console.log('  ' + c.cyan('📦 Repo:    ') + c.white(repoName));
+      } else {
+        console.log('  ' + c.yellow('⚠️ No remote repository configured'));
       }
-      console.log('');
-      printSuccess(`Done in ${duration}s`);
-      status = 'success';
-      outputLines.push('Committed and pushed: ' + commitMsg);
-
+      console.log('  ' + c.cyan('🌿 Branch:  ') + c.white(branchName));
+      console.log('  ' + c.cyan('💬 Message: ') + c.white(commitMsg));
       console.log('');
       console.log('  ' + c.dim('─────────────────────────────'));
+      console.log('');
+
+      for (const line of lines) {
+        if (line.trim()) {
+          console.log('  ' + c.dim(line.trim()));
+        }
+      }
+      
+      console.log('');
+      console.log('  ' + c.cyan(`⏱ Done in ${duration}s`));
+      
+      status = 'success';
+      outputLines.push('Committed and pushed: ' + commitMsg);
 
       appendHistory({
         raw_input: input, parsed_action: intent.action,
