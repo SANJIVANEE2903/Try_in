@@ -105,6 +105,7 @@ export async function runInit() {
         show_raw_api_response:   config.preferences.show_raw_api_response,
         output_color:            true,
         default_branch:          defaultBranch,
+        trusted_folders:         config.preferences.trusted_folders || [],
       },
     };
 

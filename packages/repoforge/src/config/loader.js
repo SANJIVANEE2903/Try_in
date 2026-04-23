@@ -29,6 +29,7 @@ export const DEFAULT_CONFIG = {
     show_raw_api_response: false,
     output_color: true,
     default_branch: 'main',
+    trusted_folders: [],
   },
 };
 

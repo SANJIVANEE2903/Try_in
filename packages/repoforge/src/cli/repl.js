@@ -5,6 +5,7 @@ import { parseIntent } from '../llm/parser.js';
 import { buildGraphifyEnhancedInput, getGraphifyContext } from '../graphify/context.js';
 import { dispatchAction, formatWebhookResult, WebhookError } from '../github/webhooks.js';
 import { appendHistory, getRecentHistory, printHistory } from '../history/logger.js';
+import { saveConfig } from '../config/loader.js';
 import {
   c,
   printActionPreview,
@@ -314,6 +315,38 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
     // ── Local git commit_and_push ──────────────────────────────────
     if (intent.action === 'commit_and_push') {
+      const currentFolder = process.cwd();
+      const trustedFolders = config.preferences?.trusted_folders || [];
+      const isTrusted = trustedFolders.includes(currentFolder);
+
+      if (!isTrusted) {
+        if (rl) {
+          const allowStr = await new Promise((resolve) =>
+            rl.question(c.yellow(`\n  🔐 This folder is not trusted. Allow Git operations here? (y/n)\n  ❯ `), resolve)
+          );
+          if (allowStr.trim().toLowerCase() !== 'y') {
+            console.log('');
+            printError('❌ Operation cancelled (untrusted folder)');
+            appendHistory({
+              raw_input: input, parsed_action: intent.action,
+              params: intent.params || {}, status: 'cancelled',
+              output: 'Untrusted folder', duration_ms: Date.now() - startTime,
+            });
+            return;
+          }
+          
+          config.preferences.trusted_folders = [...trustedFolders, currentFolder];
+          saveConfig(config);
+          console.log('');
+          printSuccess('Folder added to trusted workspaces.');
+          await sleep(300);
+        } else {
+          console.log('');
+          printError('❌ Operation cancelled (untrusted folder, non-interactive mode)');
+          return;
+        }
+      }
+
       console.log('');
       execSpinner = createSpinner('🔍 Checking local Git repository...');
       execSpinner.start();
