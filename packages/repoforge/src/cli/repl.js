@@ -280,6 +280,83 @@ async function handleSwitchBranch(input, rl) {
   }
 }
 
+async function handleCreateBranch(input) {
+  const gitInfo = detectLocalGit();
+  if (!gitInfo.found) {
+    printError('\n❌ Not inside a Git repository');
+    return;
+  }
+
+  let branch = '';
+  const lowerInput = input.trim().toLowerCase();
+  
+  if (lowerInput.startsWith('create branch ')) {
+    branch = input.trim().slice('create branch '.length).trim();
+  } else if (lowerInput.startsWith('new branch ')) {
+    branch = input.trim().slice('new branch '.length).trim();
+  }
+
+  if (!branch) {
+    printError('\n❌ Branch name is required.');
+    return;
+  }
+
+  console.log(`\n🌿 Creating branch ${branch}...\n`);
+  try {
+    execSync(`git switch -c ${branch}`, { encoding: 'utf-8', stdio: 'pipe' });
+    console.log(c.green(`✔ Switched to new branch: ${branch}\n`));
+  } catch (e) {
+    const outMsg = (e.stdout || '') + '\n' + (e.stderr || '') + '\n' + e.message;
+    const lowerOut = outMsg.toLowerCase();
+    
+    if (lowerOut.includes('already exists')) {
+      console.log(c.red(`❌ Branch already exists\n`));
+    } else {
+      printError('\n❌ Failed to create branch:\n' + outMsg);
+    }
+  }
+}
+
+async function handlePushSafe(input) {
+  const { execSync } = await import('child_process');
+
+  try {
+    // Check if inside git repo
+    execSync('git rev-parse --is-inside-work-tree', { stdio: 'ignore' });
+
+    // Get current branch
+    const currentBranch = execSync('git branch --show-current', {
+      encoding: 'utf-8'
+    }).trim();
+
+    // Extract branch from input (optional)
+    let branch = currentBranch;
+    const match = input.match(/push(?: branch)? (\S+)/i);
+    if (match) {
+      const extracted = match[1];
+      if (extracted.toLowerCase() !== 'current') {
+        branch = extracted;
+      }
+    }
+
+    console.log(`\n🚀 Pushing branch ${branch}...\n`);
+
+    try {
+      // Try normal push
+      execSync(`git push`, { stdio: 'inherit' });
+    } catch {
+      // First-time push → set upstream
+      console.log('🔗 First push detected. Setting upstream...\n');
+      execSync(`git push -u origin ${branch}`, { stdio: 'inherit' });
+    }
+
+    console.log(`\n✔ Branch '${branch}' pushed successfully\n`);
+
+  } catch {
+    console.log('\n❌ Not inside a Git repository\n');
+  }
+}
+
 async function promptForCloneDestination() {
   const desktopPath = path.join(os.homedir(), 'Desktop');
   const documentsPath = path.join(os.homedir(), 'Documents');
@@ -506,6 +583,16 @@ export async function runRepl(config, flags = {}) {
       lowerInput === 'checkout'
     ) {
       await handleSwitchBranch(input, rl);
+      continue;
+    }
+
+    if (lowerInput.startsWith('create branch ') || lowerInput.startsWith('new branch ')) {
+      await handleCreateBranch(input);
+      continue;
+    }
+
+    if (lowerInput.startsWith('push')) {
+      await handlePushSafe(input);
       continue;
     }
 
