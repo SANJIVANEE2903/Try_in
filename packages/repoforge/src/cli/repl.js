@@ -1,21 +1,25 @@
 import readline from 'readline';
 import { execSync } from 'child_process';
+import fs, { existsSync } from 'fs';
+import os from 'os';
+import path from 'path';
+import inquirer from 'inquirer';
 import { callLLM, LLMError } from '../llm/client.js';
 import { parseIntent } from '../llm/parser.js';
 import { buildGraphifyEnhancedInput, getGraphifyContext } from '../graphify/context.js';
-import { dispatchAction, formatWebhookResult, WebhookError } from '../github/webhooks.js';
+import { dispatchAction, WebhookError } from '../github/webhooks.js';
 import { appendHistory, getRecentHistory, printHistory } from '../history/logger.js';
 import { saveConfig } from '../config/loader.js';
 import {
   c,
   printActionPreview,
+  renderResult,
   printSuccess,
   printError,
   printWarning,
   printInfo,
   printProgress,
   printHelp,
-  printBanner,
   printCompactHeader,
   printDivider,
   printTips,
@@ -36,6 +40,97 @@ const EXAMPLE_COMMANDS = [
   'commit and push with message "your message"',
 ];
 
+async function promptForCloneDestination() {
+  const desktopPath = path.join(os.homedir(), 'Desktop');
+  const documentsPath = path.join(os.homedir(), 'Documents');
+  const currentFolder = process.cwd();
+
+  const choices = [
+    { name: `Desktop (${desktopPath})`, value: desktopPath },
+    { name: `Documents (${documentsPath})`, value: documentsPath },
+    { name: `Current Folder (${currentFolder})`, value: currentFolder },
+    { name: 'Browse Folders...', value: 'BROWSE' }
+  ];
+
+  let answer = await inquirer.prompt([{
+    type: 'list',
+    name: 'destination',
+    message: 'Select clone destination:',
+    choices
+  }]);
+
+  if (answer.destination !== 'BROWSE') {
+    return answer.destination;
+  }
+
+  let currentBrowsePath = currentFolder;
+  while (true) {
+    let items;
+    try {
+      items = fs.readdirSync(currentBrowsePath, { withFileTypes: true })
+                .filter(dirent => dirent.isDirectory())
+                .map(dirent => dirent.name);
+    } catch (e) {
+      items = [];
+    }
+
+    const browseChoices = [
+      { name: c.green('✅ [Select this folder]'), value: 'SELECT' },
+      { name: c.yellow('🔙 .. (go back)'), value: 'BACK' }
+    ];
+
+    items.forEach(item => {
+      browseChoices.push({ name: `📁 ${item}`, value: item });
+    });
+
+    console.log('');
+    console.log(c.cyan(`📂 Current path: ${currentBrowsePath}`));
+    console.log(c.dim('  (Use arrow keys to navigate)'));
+
+    const res = await inquirer.prompt([{
+      type: 'list',
+      name: 'choice',
+      message: 'Choose a folder:',
+      choices: browseChoices,
+      pageSize: 15
+    }]);
+
+    if (res.choice === 'SELECT') {
+      return currentBrowsePath;
+    } else if (res.choice === 'BACK') {
+      currentBrowsePath = path.dirname(currentBrowsePath);
+    } else {
+      currentBrowsePath = path.join(currentBrowsePath, res.choice);
+    }
+  }
+}
+
+// ── Auto-detect local Git repository ────────────────────────────
+function detectLocalGit() {
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { stdio: 'pipe' });
+    let repoName = null;
+    let branch   = null;
+    let hasRemote = false;
+    // folder name as reliable fallback
+    const folderName = path.basename(execSync('git rev-parse --show-toplevel', { stdio: 'pipe', encoding: 'utf-8' }).trim());
+    try {
+      const remoteUrl = execSync('git config --get remote.origin.url', { stdio: 'pipe', encoding: 'utf-8' }).trim();
+      if (remoteUrl) {
+        hasRemote = true;
+        const parts = remoteUrl.split('/');
+        repoName = parts[parts.length - 1].replace(/\.git$/, '');
+      }
+    } catch {}
+    try {
+      branch = execSync('git branch --show-current', { stdio: 'pipe', encoding: 'utf-8' }).trim() || null;
+    } catch {}
+    return { found: true, repoName: repoName || folderName, folderName, branch, hasRemote };
+  } catch {
+    return { found: false, repoName: null, folderName: null, branch: null, hasRemote: false };
+  }
+}
+
 function validateInput(input) {
   if (!input || input.trim().length === 0) {
     return { valid: false, reason: 'empty' };
@@ -55,14 +150,12 @@ function validateInput(input) {
 }
 
 export async function runRepl(config, flags = {}) {
-  const session = {
+  const session = config._session || {
     repo:   flags.repo || null,
     branch: config.preferences.default_branch || 'main',
   };
 
   config._session = session;
-
-  printBanner(config);
   printTips();
 
   const rl = readline.createInterface({
@@ -71,18 +164,41 @@ export async function runRepl(config, flags = {}) {
     terminal: true,
   });
 
-  const promptUser = () =>
-    new Promise((resolve) => {
-      rl.question(c.cyan('\n  ❯ '), (line) => resolve(line));
+  const promptUser = () => {
+    const git = detectLocalGit();
+    let prefix;
+    if (git.found) {
+      const repoLabel = git.repoName || git.folderName || 'git';
+      const branchLabel = git.branch || session.branch;
+      prefix = c.dim('[') + c.cyan(repoLabel) + c.dim(' | ') + c.green(branchLabel) + c.dim(']');
+    } else {
+      prefix = c.dim('[') + c.yellow('no repo') + c.dim(']');
+    }
+    return new Promise((resolve) => {
+      rl.question('\n  ' + prefix + ' ' + c.cyan('❯ '), (line) => resolve(line));
     });
+  };
 
   let running = true;
+  let authMode = false;
   rl.on('close', () => { running = false; });
 
   while (running) {
     let input;
     try {
-      input = await promptUser();
+      if (authMode) {
+        if (rl) rl.pause();
+        const res = await inquirer.prompt([{
+          type: 'password',
+          name: 'token',
+          message: '🔐 Enter your GitHub Personal Access Token:',
+          mask: '*'
+        }]);
+        input = res.token;
+        if (rl) rl.resume();
+      } else {
+        input = await promptUser();
+      }
     } catch {
       break;
     }
@@ -90,9 +206,48 @@ export async function runRepl(config, flags = {}) {
     input = input.trim();
     if (!input) continue;
 
+    if (authMode) {
+      if (input.toLowerCase() === '/exit' || input.toLowerCase() === '/quit') {
+        running = false;
+        continue;
+      }
+      
+      const spinner = createSpinner('Validating token...');
+      spinner.start();
+      try {
+        const res = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `Bearer ${input}`,
+            'User-Agent': 'RepoForge-CLI'
+          }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          config.github = config.github || {};
+          config.github.token = input;
+          config.github.username = data.login;
+          saveConfig(config);
+          authMode = false;
+          spinner.stopAndClear();
+          console.log('');
+          printSuccess(`Authenticated as ${c.bold(data.login)}`);
+        } else {
+          spinner.stopAndClear();
+          printError('Invalid token, try again.');
+        }
+      } catch (e) {
+        spinner.stopAndClear();
+        printError('Network error validating token. Try again.');
+      }
+      continue;
+    }
+
     if (input.startsWith('/')) {
-      const handled = await handleSlash(input, session, config, rl, flags);
-      if (!handled) running = false;
+      const state = { running, authMode };
+      const handled = await handleSlash(input, session, config, rl, flags, state);
+      running = state.running;
+      authMode = state.authMode;
+      if (!handled && !running) break;
       continue;
     }
 
@@ -112,12 +267,45 @@ export async function runRepl(config, flags = {}) {
   rl.close();
 }
 
-async function handleSlash(input, session, config, rl, flags) {
+async function handleSlash(input, session, config, rl, flags, state = null) {
   const parts = input.slice(1).split(/\s+/);
   const cmd   = parts[0].toLowerCase();
   const arg   = parts.slice(1).join(' ').trim();
 
   switch (cmd) {
+    case 'cd':
+      if (arg) {
+        try {
+          const target = path.resolve(process.cwd(), arg);
+          if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+            process.chdir(target);
+            console.log('');
+            printSuccess(`Directory changed to: ${c.bold(process.cwd())}`);
+          } else {
+            console.log('');
+            printError(`Path is not a valid directory: ${target}`);
+          }
+        } catch (e) {
+          console.log('');
+          printError(`Failed to change directory: ${e.message}`);
+        }
+      } else {
+        if (rl) rl.pause();
+        try {
+          const selectedPath = await promptForCloneDestination();
+          if (selectedPath && fs.existsSync(selectedPath) && fs.statSync(selectedPath).isDirectory()) {
+            process.chdir(selectedPath);
+            console.log('');
+            printSuccess(`Directory changed to: ${c.bold(process.cwd())}`);
+          }
+        } catch (err) {
+          console.log('');
+          printError('Directory selection cancelled.');
+        }
+        if (rl) rl.resume();
+      }
+      break;
+
     case 'help':
       printHelp();
       break;
@@ -187,6 +375,18 @@ async function handleSlash(input, session, config, rl, flags) {
       break;
     }
 
+    case 'reauth':
+    case 'logout':
+      if (config.github) {
+        config.github.token = '';
+        saveConfig(config);
+        console.log('');
+        if (state) state.authMode = true;
+      } else {
+        printWarning('No GitHub configuration found.');
+      }
+      break;
+
     case 'clear':
       process.stdout.write('\x1Bc');
       printCompactHeader(config);
@@ -196,8 +396,8 @@ async function handleSlash(input, session, config, rl, flags) {
     case 'quit':
     case 'q':
       console.log('');
-      console.log(c.dim('  Goodbye. ◆\n'));
-      return false;
+      console.log(c.dim('  Goodbye. 👋\n'));
+      process.exit(0);
 
     default:
       printWarning(`Unknown command: /${cmd} — type /help for available commands.`);
@@ -313,6 +513,143 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       return;
     }
 
+    // ── Auto-detect git repo for local actions ─────────────────────
+    const GIT_DEPENDENT_ACTIONS = ['commit_and_push', 'create_pr', 'delete_branch', 'merge_pr', 'close_pr', 'pull'];
+    if (GIT_DEPENDENT_ACTIONS.includes(intent.action)) {
+      const gitInfo = detectLocalGit();
+      if (!gitInfo.found) {
+        // Not in a git repo — guide user with arrow-key menu
+        spinner.stopAndClear();
+        console.log('');
+        console.log('  ' + c.bold(c.red('❌ No local repository found')));
+        console.log('  ' + c.dim('   You are not inside a Git repository.'));
+        console.log('');
+
+        if (rl) rl.pause();
+        try {
+          const { nextAction } = await inquirer.prompt([{
+            type: 'list',
+            name: 'nextAction',
+            message: '💡 What would you like to do?',
+            choices: [
+              { name: '📥  Clone an existing repository', value: 'clone' },
+              { name: '🆕  Create a new repository', value: 'create' },
+              { name: '↩️   Cancel', value: 'cancel' },
+            ]
+          }]);
+
+          if (nextAction === 'clone') {
+            if (rl) rl.resume();
+            await processNaturalLanguage('clone a repo', config, session, flags, rl);
+          } else if (nextAction === 'create') {
+            if (rl) rl.resume();
+            await processNaturalLanguage('create a new repo', config, session, flags, rl);
+          } else {
+            if (rl) rl.resume();
+            console.log('');
+            printInfo('Operation cancelled.');
+          }
+        } catch {
+          if (rl) rl.resume();
+        }
+        appendHistory({
+          raw_input: input, parsed_action: intent.action,
+          params: intent.params || {}, status: 'cancelled',
+          output: 'No local git repo found', duration_ms: Date.now() - startTime,
+        });
+        return;
+      }
+      // gitInfo.found === true → context already shown in prompt, proceed normally
+    }
+
+    // ── Local git clone_repo ───────────────────────────────────────
+    if (intent.action === 'clone_repo') {
+      const repoName = intent.params?.repo || intent.params?.name;
+      const username = config.github?.username;
+
+      if (!repoName) {
+        printError('Repository name is required for cloning.');
+        appendHistory({
+          raw_input: input, parsed_action: intent.action,
+          params: intent.params || {}, status: 'failed',
+          output: 'Missing repo name', duration_ms: Date.now() - startTime,
+        });
+        return;
+      }
+
+      if (!username) {
+        printError('GitHub username is not configured. Please run repoforge init or set it in ~/.repoforge/config.json.');
+        appendHistory({
+          raw_input: input, parsed_action: intent.action,
+          params: intent.params || {}, status: 'failed',
+          output: 'Missing GitHub username', duration_ms: Date.now() - startTime,
+        });
+        return;
+      }
+
+      if (rl) rl.pause();
+      let selectedPath;
+      try {
+        selectedPath = await promptForCloneDestination();
+      } catch (err) {
+        if (rl) rl.resume();
+        printError('Folder selection cancelled.');
+        return;
+      }
+      if (rl) rl.resume();
+
+      const targetFolder = path.join(selectedPath, repoName);
+
+      if (existsSync(targetFolder)) {
+        printError('❌ Folder already exists: ' + targetFolder);
+        appendHistory({
+          raw_input: input, parsed_action: intent.action,
+          params: intent.params || {}, status: 'failed',
+          output: 'Folder already exists', duration_ms: Date.now() - startTime,
+        });
+        return;
+      }
+
+      console.log('');
+      const cloneSpinner = createSpinner(`🌐 Cloning from GitHub...`);
+      cloneSpinner.start();
+      await sleep(300);
+
+      cloneSpinner.text(`🚀 Cloning repository...`);
+      const repoUrl = `https://github.com/${username}/${repoName}.git`;
+
+      try {
+        execSync(`git clone ${repoUrl} "${targetFolder}"`, { stdio: 'pipe' });
+        cloneSpinner.stopAndClear();
+        
+        console.log('');
+        console.log('  ' + c.bold(c.green('✔ Clone completed successfully')));
+        console.log('  ' + c.cyan('📁 Folder: ') + c.white(targetFolder));
+        console.log('  ' + c.cyan('🔗 ') + c.white(repoUrl));
+        console.log('');
+        
+        status = 'success';
+        outputLines.push(`Cloned repository: ${repoName} into ${targetFolder}`);
+      } catch (e) {
+        cloneSpinner.fail('Clone failed');
+        const stderr = e.stderr?.toString() || e.message;
+        if (stderr.includes('Repository not found') || stderr.includes('not found')) {
+          printError('❌ Repository not found: ' + repoName);
+        } else {
+          printError('❌ Git clone failed: ' + stderr);
+        }
+        status = 'failed';
+        outputLines.push('Error during clone: ' + stderr);
+      }
+
+      appendHistory({
+        raw_input: input, parsed_action: intent.action,
+        params: intent.params || {}, status,
+        output: outputLines.join('\n'), duration_ms: Date.now() - startTime,
+      });
+      return;
+    }
+
     // ── Local git commit_and_push ──────────────────────────────────
     if (intent.action === 'commit_and_push') {
       const currentFolder = process.cwd();
@@ -347,36 +684,16 @@ export async function processNaturalLanguage(input, config, session, flags = {},
         }
       }
 
-      console.log('');
-      execSpinner = createSpinner('🔍 Checking local Git repository...');
-      execSpinner.start();
-      await sleep(300);
-
-      try {
-        execSync('git rev-parse --is-inside-work-tree', { stdio: 'pipe' });
-      } catch {
-        execSpinner.fail('Not a Git repo');
-        printError('Not inside a Git repository. Run this inside your project folder.');
-        appendHistory({
-          raw_input: input, parsed_action: intent.action,
-          params: intent.params || {}, status: 'failed',
-          output: 'Not inside a Git repository', duration_ms: Date.now() - startTime,
-        });
-        return;
-      }
-
-      let repoName = null;
-      try {
-        const remoteUrl = execSync('git config --get remote.origin.url', { stdio: 'pipe', encoding: 'utf-8' }).trim();
-        if (remoteUrl) {
-          const parts = remoteUrl.split('/');
-          repoName = parts[parts.length - 1].replace(/\.git$/, '');
-        }
-      } catch (e) {
-        // no remote configured
-      }
+      // Git repo already verified by the guard block above — get details
+      const gitContext = detectLocalGit();
+      const repoName = gitContext.repoName;
 
       const commitMsg = intent.params?.message || intent.params?.commit_message || 'Update via RepoForge';
+
+      console.log('');
+      execSpinner = createSpinner('📂 Staging all changes...');
+      execSpinner.start();
+      await sleep(300);
 
       execSpinner.text('📂 Staging all changes...');
       await sleep(200);
@@ -396,10 +713,20 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       try {
         commitOutput = execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { stdio: 'pipe', encoding: 'utf-8' });
       } catch (e) {
-        const stderr = e.stderr?.toString() || e.message;
-        if (stderr.includes('nothing to commit')) {
+        const outMsg = (e.stdout?.toString() || '') + (e.stderr?.toString() || '') + e.message;
+        if (outMsg.includes('nothing to commit')) {
           execSpinner.stopAndClear();
-          printWarning('Nothing to commit — working tree is clean.');
+          console.log('');
+          console.log('  ' + c.yellow('⚠️  No changes to commit'));
+          console.log('');
+          console.log('  ' + c.cyan('💡 Git does not track empty folders'));
+          console.log('');
+          console.log('  ' + c.dim('👉 Add a file inside your folder:'));
+          console.log('  ' + c.dim('   e.g., my-folder/README.md'));
+          console.log('');
+          console.log('  ' + c.dim('Then run:'));
+          console.log('  ' + c.white('   commit and push "initial commit"'));
+          console.log('');
           appendHistory({
             raw_input: input, parsed_action: intent.action,
             params: intent.params || {}, status: 'success',
@@ -414,6 +741,53 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
       execSpinner.text('🚀 Pushing to remote...');
       await sleep(200);
+
+      // ── No remote configured — offer to link before pushing ──────
+      if (!gitContext.hasRemote) {
+        execSpinner.stopAndClear();
+        console.log('');
+        console.log('  ' + c.yellow('⚠️  No remote repository configured'));
+        console.log('  ' + c.dim('   This repo has no origin remote linked to GitHub.'));
+        console.log('');
+        let shouldLink = false;
+        if (rl) {
+          const ans = await new Promise((resolve) =>
+            rl.question(c.cyan('  💡 Do you want to link this repo to GitHub? (y/n)\n  ❯ '), resolve)
+          );
+          shouldLink = ans.trim().toLowerCase() === 'y';
+        }
+        if (shouldLink) {
+          const username = config.github?.username;
+          const repoLabel = gitContext.folderName || gitContext.repoName;
+          if (username && repoLabel) {
+            const remoteUrl = `https://github.com/${username}/${repoLabel}.git`;
+            try {
+              execSync(`git remote add origin ${remoteUrl}`, { stdio: 'pipe' });
+              printSuccess(`Remote linked: ${remoteUrl}`);
+              console.log('');
+            } catch (e) {
+              printError('Failed to add remote: ' + e.message);
+              appendHistory({
+                raw_input: input, parsed_action: intent.action,
+                params: intent.params || {}, status: 'failed',
+                output: 'Failed to add remote', duration_ms: Date.now() - startTime,
+              });
+              return;
+            }
+          } else {
+            printError('Cannot link — GitHub username not configured. Run: repoforge init');
+            return;
+          }
+        } else {
+          printInfo('Push skipped. Commit was saved locally.');
+          appendHistory({
+            raw_input: input, parsed_action: intent.action,
+            params: intent.params || {}, status: 'success',
+            output: 'Committed locally, push skipped (no remote)', duration_ms: Date.now() - startTime,
+          });
+          return;
+        }
+      }
 
       let pushOutput = '';
       try {
@@ -430,10 +804,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       const lines = commitOutput.trim().split('\n');
 
-      let branchName = session.branch;
-      try {
-        branchName = execSync('git branch --show-current', { stdio: 'pipe', encoding: 'utf-8' }).trim() || session.branch;
-      } catch (e) {}
+      const branchName = gitContext.branch || session.branch;
 
       console.log('');
       console.log('  ' + c.bold(c.green('✔ Committed & Pushed Successfully')));
@@ -469,6 +840,126 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       return;
     }
 
+    // ── Local git pull ─────────────────────────────────────────────
+    if (intent.action === 'pull') {
+      const gitContext = detectLocalGit();
+      const repoName = gitContext.repoName || gitContext.folderName;
+      const branchName = gitContext.branch || session.branch;
+
+      console.log('');
+      execSpinner = createSpinner('🔄 Pulling latest changes...');
+      execSpinner.start();
+      await sleep(300);
+
+      if (!gitContext.hasRemote) {
+        execSpinner.stopAndClear();
+        printWarning('No remote repository configured');
+        appendHistory({
+          raw_input: input, parsed_action: intent.action,
+          params: intent.params || {}, status: 'failed',
+          output: 'No remote configured', duration_ms: Date.now() - startTime,
+        });
+        return;
+      }
+
+      let pullOutput = '';
+      try {
+        pullOutput = execSync('git pull', { stdio: 'pipe', encoding: 'utf-8' });
+      } catch (e) {
+        const stderr = e.stderr?.toString() || e.message;
+        execSpinner.stopAndClear();
+        if (stderr.toLowerCase().includes('conflict')) {
+          printError('Merge conflict detected');
+        } else {
+          printError('Git pull failed: ' + stderr);
+        }
+        return;
+      }
+
+      execSpinner.stopAndClear();
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      const lines = pullOutput.trim().split('\n');
+
+      console.log('');
+      console.log('  ' + c.bold(c.green('✔ Repository updated successfully')));
+      console.log('');
+      console.log('  ' + c.cyan('📦 Repo:    ') + c.white(repoName));
+      console.log('  ' + c.cyan('🌿 Branch:  ') + c.white(branchName));
+      console.log('');
+      console.log('  ' + c.dim('─────────────────────────────'));
+      console.log('');
+
+      for (const line of lines) {
+        if (line.trim()) {
+          console.log('  ' + c.dim(line.trim()));
+        }
+      }
+      
+      console.log('');
+      console.log('  ' + c.cyan(`⏱ Done in ${duration}s`));
+      
+      status = 'success';
+      outputLines.push('Pulled latest changes');
+
+      appendHistory({
+        raw_input: input, parsed_action: intent.action,
+        params: intent.params || {}, status,
+        output: outputLines.join('\n'), duration_ms: Date.now() - startTime,
+      });
+      return;
+    }
+
+    // ── No remote configured check for PRs ───────────────────────
+    if (intent.action === 'create_pr') {
+      const gitContext = detectLocalGit();
+      if (!gitContext.hasRemote) {
+        console.log('');
+        console.log('  ' + c.yellow('⚠️  No remote repository configured'));
+        console.log('  ' + c.dim('   This repo has no origin remote linked to GitHub.'));
+        console.log('');
+        let shouldLink = false;
+        if (rl) {
+          const ans = await new Promise((resolve) =>
+            rl.question(c.cyan('  💡 Do you want to link this repo to GitHub? (y/n)\n  ❯ '), resolve)
+          );
+          shouldLink = ans.trim().toLowerCase() === 'y';
+        }
+        if (shouldLink) {
+          const username = config.github?.username;
+          const repoLabel = gitContext.folderName || gitContext.repoName;
+          if (username && repoLabel) {
+            const remoteUrl = `https://github.com/${username}/${repoLabel}.git`;
+            try {
+              execSync(`git remote add origin ${remoteUrl}`, { stdio: 'pipe' });
+              printSuccess(`Remote linked: ${remoteUrl}`);
+              console.log('  ' + c.dim('Please push your branch before creating a PR.'));
+              console.log('');
+            } catch (e) {
+              printError('Failed to add remote: ' + e.message);
+              appendHistory({
+                raw_input: input, parsed_action: intent.action,
+                params: intent.params || {}, status: 'failed',
+                output: 'Failed to add remote', duration_ms: Date.now() - startTime,
+              });
+              return;
+            }
+          } else {
+            printError('Cannot link — GitHub username not configured. Run: repoforge init');
+            return;
+          }
+        } else {
+          printInfo('PR creation cancelled.');
+          appendHistory({
+            raw_input: input, parsed_action: intent.action,
+            params: intent.params || {}, status: 'cancelled',
+            output: 'PR creation skipped (no remote)', duration_ms: Date.now() - startTime,
+          });
+          return;
+        }
+      }
+    }
+
     // ── n8n webhook dispatch (all other actions) ──────────────────
     console.log('');
     execSpinner = createSpinner(`⚡ Sending request to n8n...`);
@@ -486,21 +977,117 @@ export async function processNaturalLanguage(input, config, session, flags = {},
     execSpinner.stopAndClear();
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-    const lines    = formatWebhookResult(result, intent.action);
 
-    console.log('');
-    for (const line of lines) {
-      outputLines.push(line);
-      if (line.trim().startsWith('•') || line.trim().startsWith('…') || line.trim().match(/^\d+\./)) {
-        console.log('  ' + c.cyan(line));
-      } else {
-        console.log('  ' + c.white(line));
+    // ── Validate n8n result for create_repo ─────────────────────
+    let createRepoSucceeded = true;
+    if (intent.action === 'create_repo') {
+      const repoData = result.data || result.result || result;
+      const repoObj = Array.isArray(repoData) ? repoData[0] : repoData;
+      const hasName = !!(repoObj?.name);
+      const hasUrl = !!(repoObj?.html_url || repoObj?.url);
+      if (!hasName && !hasUrl) {
+        createRepoSucceeded = false;
+        console.log('');
+        console.log('  ' + c.bold(c.red('❌ Repository creation failed')));
+        console.log('  ' + c.yellow('⚠️  n8n workflow did not return repo data.'));
+        console.log('  ' + c.dim('    Make sure the workflow is active and the GitHub token has repo scope.'));
+        console.log('');
+        console.log('  ' + c.cyan(`⏱ Done in ${duration}s`));
+        status = 'error';
+        outputLines.push('create_repo failed — no result data returned');
       }
     }
 
-    console.log('');
-    printSuccess(`Done in ${duration}s`);
-    status = 'success';
+    if (createRepoSucceeded) {
+      console.log('');
+      renderResult(intent.action, result);
+      console.log('');
+      console.log('  ' + c.cyan(`⏱ Done in ${duration}s`));
+      status = 'success';
+      outputLines.push(`Action ${intent.action} completed`);
+    }
+
+    // ── Clone suggestion after create_repo ──────────────────────
+    if (intent.action === 'create_repo' && rl && createRepoSucceeded) {
+      const repoData = result.data || result.result || result;
+      const repoObj = Array.isArray(repoData) ? repoData[0] : repoData;
+      const repoName = repoObj?.name || intent.params?.repo || intent.params?.name;
+      // Prefer URL from n8n response, fallback to constructing from config
+      const resultUrl = repoObj?.html_url || repoObj?.url;
+      const username = config.github?.username;
+
+      if (repoName) {
+        console.log('');
+        rl.pause();
+        try {
+          const { wantClone } = await inquirer.prompt([{
+            type: 'confirm',
+            name: 'wantClone',
+            message: '💡 Do you want to clone this repository locally?',
+            default: true
+          }]);
+
+          if (wantClone) {
+            // Build clone URL: prefer n8n result URL, fallback to config username
+            let cloneUrl;
+            if (resultUrl) {
+              cloneUrl = resultUrl.endsWith('.git') ? resultUrl : resultUrl + '.git';
+            } else if (username) {
+              cloneUrl = `https://github.com/${username}/${repoName}.git`;
+            } else {
+              printError('Cannot determine clone URL — no URL from response and no username configured.');
+              rl.resume();
+              return;
+            }
+
+            let selectedPath;
+            try {
+              selectedPath = await promptForCloneDestination();
+            } catch (err) {
+              rl.resume();
+              printError('Folder selection cancelled.');
+              selectedPath = null;
+            }
+
+            if (selectedPath) {
+              const targetFolder = path.join(selectedPath, repoName);
+              if (existsSync(targetFolder)) {
+                printError('Folder already exists: ' + targetFolder);
+              } else {
+                console.log('');
+                const cloneSpinner = createSpinner('🚀 Waiting for GitHub to propagate...');
+                cloneSpinner.start();
+                // GitHub propagation delay — repo may not be immediately cloneable
+                await sleep(2000);
+                cloneSpinner.text('🚀 Cloning repository...');
+
+                try {
+                  execSync(`git clone ${cloneUrl} "${targetFolder}"`, { stdio: 'pipe' });
+                  cloneSpinner.stopAndClear();
+                  console.log('');
+                  console.log('  ' + c.bold(c.green('✔ Clone completed successfully')));
+                  console.log('  ' + c.cyan('📁 Folder: ') + c.white(targetFolder));
+                  console.log('  ' + c.cyan('🔗 ') + c.white(cloneUrl));
+                  console.log('');
+                  outputLines.push(`Cloned to ${targetFolder}`);
+                } catch (e) {
+                  cloneSpinner.stopAndClear();
+                  const stderr = e.stderr?.toString() || e.message;
+                  if (stderr.includes('not found') || stderr.includes('not exist') || stderr.includes('Repository not found')) {
+                    printError('Repository not found or not accessible.\n  URL: ' + cloneUrl + '\n  The repo may still be propagating — try cloning manually in a few seconds.');
+                  } else {
+                    printError('Git clone failed: ' + stderr);
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // User cancelled prompt — skip clone silently
+        }
+        rl.resume();
+      }
+    }
 
     if (flags.raw && !flags.debug) {
       console.log('');

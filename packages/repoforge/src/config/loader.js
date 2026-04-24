@@ -58,7 +58,11 @@ export function saveConfig(config) {
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true });
   }
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+  // Strip internal runtime-only properties (prefixed with _) before persisting
+  const cleaned = Object.fromEntries(
+    Object.entries(config).filter(([key]) => !key.startsWith('_'))
+  );
+  writeFileSync(CONFIG_PATH, JSON.stringify(cleaned, null, 2), 'utf8');
 }
 
 function deepMerge(defaults, overrides) {

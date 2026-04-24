@@ -71,22 +71,29 @@ export async function main() {
   if (flags.endpoint) config.llm.endpoint = flags.endpoint;
   if (flags.noConfirm) config.preferences.confirm_before_execute = false;
 
+  const session = {
+    repo: flags.repo || null,
+    branch: config.preferences.default_branch || 'main',
+  };
+  config._session = session;
+
+  let isPiped = !process.stdin.isTTY;
+  if (process.env.npm_lifecycle_event) {
+    isPiped = false;
+  }
+
+  // Show banner ONCE at startup (guard inside printBanner prevents re-renders)
+  printBanner(config);
+
   await ensureAuthenticated(config);
 
   if (flags.prompt) {
-    const session = {
-      repo: flags.repo || null,
-      branch: config.preferences.default_branch || 'main',
-    };
-    config._session = session;
     // Execute the first command
     await processNaturalLanguage(flags.prompt, config, session, flags);
     // Then continue into REPL for more commands
     await runRepl(config, flags);
     return;
   }
-
-  const isPiped = !process.stdin.isTTY;
 
   if (isPiped) {
     const chunks = [];
@@ -95,11 +102,6 @@ export async function main() {
     }
     const input = Buffer.concat(chunks).toString('utf8').trim();
     if (input) {
-      const session = {
-        repo: flags.repo || null,
-        branch: config.preferences.default_branch || 'main',
-      };
-      config._session = session;
       await processNaturalLanguage(input, config, session, flags);
     }
     process.exit(0);

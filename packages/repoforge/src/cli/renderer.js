@@ -29,6 +29,9 @@ const LOGO = `
 `;
 
 export function printBanner(config) {
+  if (config && config._bannerPrinted) return;
+  if (config) config._bannerPrinted = true;
+
   const model   = config?.llm?.model   || 'no model';
   const repo    = config?._session?.repo || 'none';
   const branch  = config?._session?.branch || config?.preferences?.default_branch || 'main';
@@ -116,9 +119,129 @@ export function printActionPreview(intent, sessionConfig) {
   printDivider();
 }
 
+function _arr(payload, ...keys) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === 'object') {
+    for (const k of keys) { if (Array.isArray(payload[k])) return payload[k]; }
+  }
+  return [];
+}
+
+function _obj(payload) {
+  if (!payload) return {};
+  return Array.isArray(payload) ? (payload[0] || {}) : payload;
+}
+
+export function renderResult(action, data) {
+  const payload = data.data || data.result || data;
+
+  switch (action) {
+    case 'list_repos': {
+      const repos = _arr(payload, 'repos', 'items');
+      if (repos.length === 0) {
+        console.log('  ' + c.cyan('📦 ') + c.dim('No repositories found'));
+        return;
+      }
+      console.log('  ' + c.bold(c.cyan('📦 Your Repositories:')));
+      console.log('');
+      repos.slice(0, 10).forEach((r, i) => {
+        const vis = r.private ? c.yellow('private') : c.green('public');
+        console.log(`  ${c.dim(`${i + 1}.`)} ${c.white(r.full_name || r.name)}  ${c.dim('(')}${vis}${c.dim(')')}`);
+      });
+      if (repos.length > 10) console.log('  ' + c.dim(`  ...and ${repos.length - 10} more`));
+      break;
+    }
+
+    case 'create_repo': {
+      const r = _obj(payload);
+      const repoName = r.full_name || r.name || data.name || data.repo;
+      const repoUrl = r.html_url || r.url || data.url || data.html_url;
+      console.log('  ' + c.bold(c.green('✔ Repository created successfully')));
+      console.log('');
+      if (repoName) {
+        console.log('  ' + c.cyan('📦 Repo:       ') + c.white(repoName));
+      }
+      if (r.private !== undefined) {
+        console.log('  ' + c.cyan('🔒 Visibility: ') + c.white(r.private ? 'private' : 'public'));
+      }
+      if (repoUrl) {
+        console.log('  ' + c.cyan('🔗 URL:        ') + c.white(repoUrl));
+      }
+      break;
+    }
+
+    case 'list_prs': {
+      const prs = _arr(payload, 'prs', 'items');
+      if (prs.length === 0) {
+        console.log('  ' + c.cyan('📬 ') + c.dim('No pull requests found'));
+        return;
+      }
+      console.log('  ' + c.bold(c.cyan('📬 Pull Requests:')));
+      console.log('');
+      prs.slice(0, 10).forEach((pr, i) => {
+        const st = pr.state === 'open' ? c.green('●') : (pr.merged_at ? c.magenta('●') : c.red('●'));
+        console.log(`  ${c.dim(`${i + 1}.`)} ${c.white(pr.title || 'Untitled')} ${c.dim(`(#${pr.number || '?'})`)}  ${st}`);
+      });
+      if (prs.length > 10) console.log('  ' + c.dim(`  ...and ${prs.length - 10} more`));
+      break;
+    }
+
+    case 'create_pr': {
+      const pr = _obj(payload);
+      console.log('  ' + c.bold(c.green('✔ Pull request created successfully')));
+      console.log('');
+      if (pr.title) console.log('  ' + c.cyan('📝 Title:  ') + c.white(pr.title));
+      if (pr.number) console.log('  ' + c.cyan('🔢 Number: ') + c.white(`#${pr.number}`));
+      if (pr.state) console.log('  ' + c.cyan('📊 State:  ') + c.white(pr.state));
+      const url = pr.html_url || pr.url;
+      if (url) console.log('  ' + c.cyan('🔗 ') + c.white(url));
+      break;
+    }
+
+    case 'get_status': {
+      const r = _obj(payload);
+      console.log('  ' + c.bold(c.cyan('📊 Repository Status:')));
+      console.log('');
+      if (r.full_name || r.name) console.log('  ' + c.cyan('📦 Name:       ') + c.white(r.full_name || r.name));
+      if (r.stargazers_count !== undefined) console.log('  ' + c.cyan('⭐ Stars:      ') + c.white(String(r.stargazers_count)));
+      if (r.forks_count !== undefined) console.log('  ' + c.cyan('🍴 Forks:      ') + c.white(String(r.forks_count)));
+      if (r.default_branch) console.log('  ' + c.cyan('🌿 Branch:     ') + c.white(r.default_branch));
+      if (r.private !== undefined) console.log('  ' + c.cyan('🔒 Visibility: ') + c.white(r.private ? 'private' : 'public'));
+      if (r.html_url) console.log('  ' + c.cyan('🔗 ') + c.white(r.html_url));
+      break;
+    }
+
+    case 'delete_repo': {
+      console.log('  ' + c.bold(c.green('✔ Repository deleted successfully')));
+      if (data.message) console.log('  ' + c.dim(data.message));
+      break;
+    }
+
+    case 'delete_branch': {
+      console.log('  ' + c.bold(c.green('✔ Branch deleted successfully')));
+      if (data.message) console.log('  ' + c.dim(data.message));
+      break;
+    }
+
+    default: {
+      if (data.message) {
+        console.log('  ' + c.bold(c.green('✔ ')) + c.white(data.message));
+      } else {
+        console.log('  ' + c.bold(c.green('✔ Action completed')));
+      }
+      const obj = _obj(payload);
+      const url = obj.html_url || obj.url || data.url;
+      if (url) console.log('  ' + c.cyan('🔗 ') + c.white(url));
+      if (obj.name || obj.full_name || obj.title) {
+        console.log('  ' + c.dim('  • ') + c.white(obj.full_name || obj.name || obj.title));
+      }
+      break;
+    }
+  }
+}
+
 export function printSuccess(msg) {
-  console.log(c.green('  ✅ ') + c.white('Action completed successfully.'));
-  if (msg) console.log('     ' + c.dim(msg));
+  console.log(c.green('  ✅ ') + c.white(msg || 'Action completed successfully.'));
 }
 
 export function printError(msg) {

@@ -1,7 +1,6 @@
-import readline from 'readline';
-import { c, printBanner, printInfo, printError, printSuccess } from '../cli/renderer.js';
+import inquirer from 'inquirer';
+import { c, printInfo, printError, printSuccess } from '../cli/renderer.js';
 import { saveConfig } from './loader.js';
-import { promptSecret } from './init.js';
 
 export async function ensureAuthenticated(config) {
   if (config.github && config.github.token && config.github.token.trim() !== '') {
@@ -40,25 +39,23 @@ export async function ensureAuthenticated(config) {
   }
 
   console.log('');
-  printBanner(config);
   console.log('  ' + c.bold(c.cyan('◆ GitHub Authentication Required')));
   console.log('');
   console.log(c.dim('  It looks like this is your first time running RepoForge.'));
   console.log(c.dim('  You need a GitHub Personal Access Token (classic) with ' + c.white('repo') + ' and ' + c.white('pull_request') + ' scopes.'));
   console.log('');
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: true,
-  });
-
   try {
     let token = '';
     let userData = null;
     while (!token) {
-      token = await promptSecret(rl, 'Enter your GitHub Personal Access Token:');
-      token = token.trim();
+      const answer = await inquirer.prompt([{
+        type: 'password',
+        name: 'token',
+        message: 'Enter your GitHub Personal Access Token:',
+        mask: '*'
+      }]);
+      token = answer.token.trim();
       
       if (!token) {
         process.stdout.write(c.red('  Token cannot be empty. Please try again.\n'));
@@ -109,6 +106,6 @@ export async function ensureAuthenticated(config) {
     }
     console.log('');
   } finally {
-    rl.close();
+    // no readline to close
   }
 }
