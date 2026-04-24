@@ -40,6 +40,246 @@ const EXAMPLE_COMMANDS = [
   'commit and push with message "your message"',
 ];
 
+async function promptProjectInit(clonedPath) {
+  try {
+    // Check if folder is empty (ignore .git)
+    const files = fs.readdirSync(clonedPath).filter(f => f !== '.git');
+    if (files.length > 0) return; // Not empty
+
+    console.log('');
+    const { template } = await inquirer.prompt([{
+      type: 'list',
+      name: 'template',
+      message: '🛠️ Initialize a project:',
+      choices: [
+        'Node.js',
+        'Express API',
+        'React (Vite)',
+        'Next.js',
+        'Skip'
+      ]
+    }]);
+
+    if (template === 'Skip') return;
+
+    console.log(`\n⚡ Setting up ${template} project...\n`);
+    
+    let command = '';
+    if (template === 'Node.js') {
+      command = 'npm init -y';
+    } else if (template === 'Express API') {
+      command = 'npm init -y && npm install express';
+    } else if (template === 'React (Vite)') {
+      command = 'npm create vite@latest . -- --template react && npm install';
+    } else if (template === 'Next.js') {
+      command = 'npx create-next-app@latest . --use-npm --yes';
+    }
+
+    try {
+      if (template === 'Express API') {
+        execSync(command, { stdio: 'inherit', cwd: clonedPath });
+        fs.writeFileSync(path.join(clonedPath, 'index.js'), "const express = require('express');\nconst app = express();\napp.get('/', (req, res) => res.send('Hello World!'));\napp.listen(3000, () => console.log('Server ready'));\n");
+      } else {
+        execSync(command, { stdio: 'inherit', cwd: clonedPath });
+      }
+      console.log('\n✔ Project initialized successfully!\n');
+    } catch (e) {
+      printError('\n❌ Failed to initialize project: ' + (e.stderr ? e.stderr.toString() : e.message));
+    }
+  } catch (e) {
+    printError('\n❌ Error checking folder or prompting: ' + e.message);
+  }
+}
+
+async function handleCherryPick(input, rl) {
+  const gitInfo = detectLocalGit();
+  if (!gitInfo.found) {
+    printError('\n❌ You are not inside a Git repository.');
+    return;
+  }
+
+  try {
+    const statusOutput = execSync('git status', { encoding: 'utf-8', stdio: 'pipe' });
+    if (statusOutput.toLowerCase().includes('you are currently cherry-picking')) {
+      console.log('');
+      console.log(c.yellow('⚠️ Cherry-pick already in progress\n'));
+      
+      if (rl) rl.pause();
+      const { action } = await inquirer.prompt([{
+        type: 'list',
+        name: 'action',
+        message: '💡 Choose an action:',
+        choices: [
+          { name: 'Continue (git cherry-pick --continue)', value: 'continue' },
+          { name: 'Abort (git cherry-pick --abort)', value: 'abort' },
+          { name: 'Cancel', value: 'cancel' }
+        ]
+      }]);
+      if (rl) rl.resume();
+
+      if (action === 'cancel') return;
+
+      if (action === 'continue') {
+        console.log('\n🚀 Continuing cherry-pick...\n');
+        try {
+          execSync('git cherry-pick --continue', { stdio: 'pipe', encoding: 'utf-8' });
+          console.log(c.green('✔ Cherry-pick continued and completed successfully!\n'));
+        } catch (e) {
+          const outMsg = (e.stdout || '') + '\n' + (e.stderr || '') + '\n' + e.message;
+          if (outMsg.toLowerCase().includes('conflict') || outMsg.toLowerCase().includes('unmerged files')) {
+            console.log(c.red('❌ Still in merge conflict\n'));
+            console.log(c.cyan('💡 Resolve conflicts, then run:'));
+            console.log(c.white('   git add .'));
+            console.log(c.white('   git cherry-pick --continue\n'));
+          } else {
+            printError('\n❌ Continue failed:\n' + outMsg);
+          }
+        }
+      } else if (action === 'abort') {
+        console.log('\n🛑 Aborting cherry-pick...\n');
+        try {
+          execSync('git cherry-pick --abort', { stdio: 'pipe', encoding: 'utf-8' });
+          console.log(c.green('✔ Cherry-pick aborted successfully.\n'));
+        } catch (e) {
+          printError('\n❌ Abort failed: ' + e.message);
+        }
+      }
+      return;
+    }
+  } catch (ignore) {}
+
+  const parts = input.trim().split(/\s+/);
+  let hash = parts.slice(2).join(' ').trim();
+
+  if (!hash) {
+    try {
+      const logOutput = execSync('git log -n 15 --oneline', { encoding: 'utf-8' });
+      const commits = logOutput.split('\n').filter(l => l.trim()).map(line => {
+        const h = line.split(' ')[0];
+        return { name: line, value: h };
+      });
+
+      if (commits.length === 0) {
+        printError('\n❌ No commits found in log.');
+        return;
+      }
+
+      console.log('');
+      if (rl) rl.pause();
+      const { selectedHash } = await inquirer.prompt([{
+        type: 'list',
+        name: 'selectedHash',
+        message: '🍒 Select a commit to cherry-pick:',
+        choices: [
+          ...commits,
+          { name: 'Cancel', value: 'CANCEL' }
+        ],
+        pageSize: 15
+      }]);
+      if (rl) rl.resume();
+
+      if (selectedHash === 'CANCEL') return;
+      hash = selectedHash;
+    } catch (e) {
+      if (rl) rl.resume();
+      printError('\n❌ Failed to get git log: ' + e.message);
+      return;
+    }
+  }
+
+  console.log(`\n🍒 Cherry-picking commit ${hash}...\n`);
+  try {
+    execSync(`git cherry-pick ${hash}`, { stdio: 'pipe', encoding: 'utf-8' });
+    console.log('✔ Cherry-pick completed successfully!\n');
+  } catch (e) {
+    const outMsg = (e.stdout || '') + '\n' + (e.stderr || '') + '\n' + e.message;
+    const lowerOut = outMsg.toLowerCase();
+    
+    if (lowerOut.includes('previous cherry-pick is now empty') || lowerOut.includes('nothing to commit')) {
+      console.log(c.yellow('⚠️ Nothing to apply\n'));
+      console.log(c.cyan('💡 This commit is already present in the current branch\n'));
+      try { execSync('git cherry-pick --abort', { stdio: 'pipe' }); } catch (ignore) {}
+    } else if (lowerOut.includes('conflict')) {
+      console.log(c.red('❌ Merge conflict detected\n'));
+      console.log(c.cyan('💡 Resolve conflicts, then run:'));
+      console.log(c.white('   git add .'));
+      console.log(c.white('   git cherry-pick --continue\n'));
+    } else {
+      printError('\n❌ Cherry-pick failed:\n' + outMsg);
+    }
+  }
+}
+
+async function handleSwitchBranch(input, rl) {
+  const gitInfo = detectLocalGit();
+  if (!gitInfo.found) {
+    printError('\n❌ You are not inside a Git repository.');
+    return;
+  }
+
+  let branch = '';
+  const lowerInput = input.trim().toLowerCase();
+  
+  if (lowerInput.startsWith('switch to ')) {
+    branch = input.trim().slice('switch to '.length).trim();
+  } else if (lowerInput.startsWith('checkout ')) {
+    branch = input.trim().slice('checkout '.length).trim();
+  } else if (lowerInput.startsWith('switch ')) {
+    branch = input.trim().slice('switch '.length).trim();
+  }
+
+  if (!branch) {
+    try {
+      const branchOutput = execSync('git branch --format="%(refname:short)"', { encoding: 'utf-8' });
+      const branches = branchOutput.split('\n').map(b => b.trim()).filter(b => b);
+
+      if (branches.length === 0) {
+        printError('\n❌ No branches found.');
+        return;
+      }
+
+      console.log('');
+      if (rl) rl.pause();
+      const { selectedBranch } = await inquirer.prompt([{
+        type: 'list',
+        name: 'selectedBranch',
+        message: '🌿 Select a branch to switch to:',
+        choices: [
+          ...branches,
+          { name: 'Cancel', value: 'CANCEL' }
+        ],
+        pageSize: 15
+      }]);
+      if (rl) rl.resume();
+
+      if (selectedBranch === 'CANCEL') return;
+      branch = selectedBranch;
+    } catch (e) {
+      if (rl) rl.resume();
+      printError('\n❌ Failed to get branches: ' + e.message);
+      return;
+    }
+  }
+
+  try {
+    execSync(`git switch ${branch}`, { encoding: 'utf-8', stdio: 'pipe' });
+    console.log(c.green(`\n✔ Switched to branch '${branch}'\n`));
+  } catch (e) {
+    const outMsg = (e.stdout || '') + '\n' + (e.stderr || '') + '\n' + e.message;
+    const lowerOut = outMsg.toLowerCase();
+    
+    if (lowerOut.includes('overwritten by checkout') || lowerOut.includes('local changes')) {
+      console.log(c.red('\n❌ Uncommitted changes detected\n'));
+      console.log(c.cyan('💡 Please commit or stash your changes before switching branches.\n'));
+    } else if (lowerOut.includes('invalid reference') || lowerOut.includes('did not match any')) {
+      console.log(c.red(`\n❌ Branch '${branch}' not found\n`));
+      console.log(c.cyan('💡 Check the branch name or run just "switch" to select from a list.\n'));
+    } else {
+      printError('\n❌ Failed to switch branch:\n' + outMsg);
+    }
+  }
+}
+
 async function promptForCloneDestination() {
   const desktopPath = path.join(os.homedir(), 'Desktop');
   const documentsPath = path.join(os.homedir(), 'Documents');
@@ -248,6 +488,24 @@ export async function runRepl(config, flags = {}) {
       running = state.running;
       authMode = state.authMode;
       if (!handled && !running) break;
+      continue;
+    }
+
+    const lowerInput = input.trim().toLowerCase();
+    
+    if (lowerInput.startsWith('cherry pick')) {
+      await handleCherryPick(input, rl);
+      continue;
+    }
+
+    if (
+      lowerInput.startsWith('switch to ') || 
+      lowerInput.startsWith('checkout ') || 
+      lowerInput.startsWith('switch ') || 
+      lowerInput === 'switch' || 
+      lowerInput === 'checkout'
+    ) {
+      await handleSwitchBranch(input, rl);
       continue;
     }
 
@@ -628,6 +886,9 @@ export async function processNaturalLanguage(input, config, session, flags = {},
         console.log('  ' + c.cyan('🔗 ') + c.white(repoUrl));
         console.log('');
         
+        process.chdir(targetFolder);
+        await promptProjectInit(targetFolder);
+
         status = 'success';
         outputLines.push(`Cloned repository: ${repoName} into ${targetFolder}`);
       } catch (e) {
@@ -1069,6 +1330,10 @@ export async function processNaturalLanguage(input, config, session, flags = {},
                   console.log('  ' + c.cyan('📁 Folder: ') + c.white(targetFolder));
                   console.log('  ' + c.cyan('🔗 ') + c.white(cloneUrl));
                   console.log('');
+                  
+                  process.chdir(targetFolder);
+                  await promptProjectInit(targetFolder);
+
                   outputLines.push(`Cloned to ${targetFolder}`);
                 } catch (e) {
                   cloneSpinner.stopAndClear();
