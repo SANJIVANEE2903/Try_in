@@ -1,0 +1,9 @@
+@echo off
+echo Installing pnpm globally...
+call npm install -g pnpm
+
+echo Installing project dependencies (ignoring scripts)...
+call pnpm install --ignore-scripts
+
+echo Starting the RepoForge CLI tool...
+call pnpm --filter repoforge dev

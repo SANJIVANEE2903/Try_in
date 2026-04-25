@@ -1,5 +1,6 @@
 export const VALID_ACTIONS = new Set([
   'create_repo',
+  'commit_and_push',
   'commit',
   'push',
   'pull',

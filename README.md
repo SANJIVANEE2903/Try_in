@@ -1,84 +1,39 @@
-# RepoForge — ngrok Setup
+# RepoForge
 
-Expose your local **LM Studio** (port 1234) and **n8n** (port 5678) to the internet using a single ngrok config file.
+> AI-Powered GitHub Repository Manager — Control GitHub with Natural Language
 
----
+## 🏠 Landing Page
+Visit the landing page at the root `/` route.
 
-## 1. Install ngrok
+## 🚀 Getting Started
 
-**Mac (Homebrew)**
+### Backend (FastAPI)
 ```bash
-brew install ngrok
+cd apps/backend
+pip install -r requirements.txt
+python main.py
 ```
 
-**Windows (Chocolatey)**
-```powershell
-choco install ngrok
-```
-
-**Linux**
+### Frontend (Next.js)
 ```bash
-curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-sudo apt update && sudo apt install ngrok
+cd apps/frontend
+npm install
+npm run dev
 ```
 
-Or download the binary directly from [ngrok.com/download](https://ngrok.com/download).
-
----
-
-## 2. Add your Auth Token
-
-Sign up at [ngrok.com](https://ngrok.com), then run:
-
+### CLI (PowerShell)
 ```bash
-ngrok config add-authtoken YOUR_AUTH_TOKEN_HERE
+cd apps/cli
+pip install -r requirements.txt
+python main.py chat
 ```
 
-Your token is available at: [dashboard.ngrok.com/get-started/your-authtoken](https://dashboard.ngrok.com/get-started/your-authtoken)
+## 🌐 Deployment
+- **Frontend**: Deployed on Vercel (Root directory: `apps/frontend`)
+- **Backend**: Deploy on Railway or Render
+- **CLI**: Runs locally on your machine
 
----
-
-## 3. Start Both Tunnels
-
-Make sure **LM Studio** is running on port `1234` and **n8n** is running on port `5678`, then run:
-
-```bash
-ngrok start --all --config=ngrok.yml
-```
-
----
-
-## 4. Use the Startup Scripts
-
-**Mac / Linux**
-```bash
-chmod +x start-ngrok.sh
-./start-ngrok.sh
-```
-
-**Windows**
-```powershell
-start-ngrok.bat
-```
-
----
-
-## Tunnel Map
-
-| Service   | Local Port | ngrok URL              |
-|-----------|------------|------------------------|
-| LM Studio | 1234       | shown in terminal      |
-| n8n       | 5678       | shown in terminal      |
-
-Copy the generated URLs and paste them into your `~/.repoforge/config.json`:
-- `llm.endpoint` → LM Studio ngrok URL + `/v1`
-- `n8n.webhook_base_url` → n8n ngrok URL + `/webhook-test`
-
----
-
-## Troubleshooting
-
-- **ERR_NGROK_108** — only one tunnel allowed on free plan. Upgrade to a paid plan or use two separate terminal sessions.
-- **Browser warning page** — add the header `ngrok-skip-browser-warning: true` to your requests (RepoForge does this automatically).
-- **Tunnel disconnects** — ngrok free sessions expire after ~2 hours. Restart the script when needed.
+## 📦 Tech Stack
+- **Frontend**: Next.js 14, Tailwind CSS, Framer Motion
+- **Backend**: FastAPI, Python, SQLite
+- **CLI**: Typer, Rich, Requests

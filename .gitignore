@@ -47,3 +47,29 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+venv/
+.venv/
+env/
+*.egg-info/
+
+# Environment Variables
+.env
+.env.local
+.env.production
+
+# Next.js
+apps/frontend/.next/
+apps/frontend/out/
+
+# Database
+*.db
+*.sqlite
+
+# Python CLI Config (contains GitHub token)
+~/.repoforge_v2/

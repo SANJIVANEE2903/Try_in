@@ -29,6 +29,24 @@ import {
 } from './renderer.js';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const IS_WINDOWS = process.platform === 'win32';
+
+function runCommand(command, options = {}) {
+  const baseOptions = {
+    encoding: 'utf-8',
+    stdio: 'pipe',
+    ...options,
+  };
+
+  if (IS_WINDOWS) {
+    return execSync(command, {
+      ...baseOptions,
+      shell: 'powershell.exe',
+    });
+  }
+
+  return execSync(command, baseOptions);
+}
 
 const MIN_INPUT_LENGTH = 3;
 
@@ -77,10 +95,10 @@ async function promptProjectInit(clonedPath) {
 
     try {
       if (template === 'Express API') {
-        execSync(command, { stdio: 'inherit', cwd: clonedPath });
+        runCommand(command, { stdio: 'inherit', cwd: clonedPath });
         fs.writeFileSync(path.join(clonedPath, 'index.js'), "const express = require('express');\nconst app = express();\napp.get('/', (req, res) => res.send('Hello World!'));\napp.listen(3000, () => console.log('Server ready'));\n");
       } else {
-        execSync(command, { stdio: 'inherit', cwd: clonedPath });
+        runCommand(command, { stdio: 'inherit', cwd: clonedPath });
       }
       console.log('\n✔ Project initialized successfully!\n');
     } catch (e) {
@@ -99,7 +117,7 @@ async function handleCherryPick(input, rl) {
   }
 
   try {
-    const statusOutput = execSync('git status', { encoding: 'utf-8', stdio: 'pipe' });
+    const statusOutput = runCommand('git status');
     if (statusOutput.toLowerCase().includes('you are currently cherry-picking')) {
       console.log('');
       console.log(c.yellow('⚠️ Cherry-pick already in progress\n'));
@@ -122,7 +140,7 @@ async function handleCherryPick(input, rl) {
       if (action === 'continue') {
         console.log('\n🚀 Continuing cherry-pick...\n');
         try {
-          execSync('git cherry-pick --continue', { stdio: 'pipe', encoding: 'utf-8' });
+          runCommand('git cherry-pick --continue');
           console.log(c.green('✔ Cherry-pick continued and completed successfully!\n'));
         } catch (e) {
           const outMsg = (e.stdout || '') + '\n' + (e.stderr || '') + '\n' + e.message;
@@ -138,7 +156,7 @@ async function handleCherryPick(input, rl) {
       } else if (action === 'abort') {
         console.log('\n🛑 Aborting cherry-pick...\n');
         try {
-          execSync('git cherry-pick --abort', { stdio: 'pipe', encoding: 'utf-8' });
+          runCommand('git cherry-pick --abort');
           console.log(c.green('✔ Cherry-pick aborted successfully.\n'));
         } catch (e) {
           printError('\n❌ Abort failed: ' + e.message);
@@ -153,7 +171,7 @@ async function handleCherryPick(input, rl) {
 
   if (!hash) {
     try {
-      const logOutput = execSync('git log -n 15 --oneline', { encoding: 'utf-8' });
+      const logOutput = runCommand('git log -n 15 --oneline');
       const commits = logOutput.split('\n').filter(l => l.trim()).map(line => {
         const h = line.split(' ')[0];
         return { name: line, value: h };
@@ -189,7 +207,7 @@ async function handleCherryPick(input, rl) {
 
   console.log(`\n🍒 Cherry-picking commit ${hash}...\n`);
   try {
-    execSync(`git cherry-pick ${hash}`, { stdio: 'pipe', encoding: 'utf-8' });
+    runCommand(`git cherry-pick ${hash}`);
     console.log('✔ Cherry-pick completed successfully!\n');
   } catch (e) {
     const outMsg = (e.stdout || '') + '\n' + (e.stderr || '') + '\n' + e.message;
@@ -198,7 +216,7 @@ async function handleCherryPick(input, rl) {
     if (lowerOut.includes('previous cherry-pick is now empty') || lowerOut.includes('nothing to commit')) {
       console.log(c.yellow('⚠️ Nothing to apply\n'));
       console.log(c.cyan('💡 This commit is already present in the current branch\n'));
-      try { execSync('git cherry-pick --abort', { stdio: 'pipe' }); } catch (ignore) {}
+      try { runCommand('git cherry-pick --abort'); } catch (ignore) {}
     } else if (lowerOut.includes('conflict')) {
       console.log(c.red('❌ Merge conflict detected\n'));
       console.log(c.cyan('💡 Resolve conflicts, then run:'));
@@ -230,7 +248,7 @@ async function handleSwitchBranch(input, rl) {
 
   if (!branch) {
     try {
-      const branchOutput = execSync('git branch --format="%(refname:short)"', { encoding: 'utf-8' });
+      const branchOutput = runCommand('git branch --format="%(refname:short)"');
       const branches = branchOutput.split('\n').map(b => b.trim()).filter(b => b);
 
       if (branches.length === 0) {
@@ -262,7 +280,7 @@ async function handleSwitchBranch(input, rl) {
   }
 
   try {
-    execSync(`git switch ${branch}`, { encoding: 'utf-8', stdio: 'pipe' });
+    runCommand(`git switch ${branch}`);
     console.log(c.green(`\n✔ Switched to branch '${branch}'\n`));
   } catch (e) {
     const outMsg = (e.stdout || '') + '\n' + (e.stderr || '') + '\n' + e.message;
@@ -303,7 +321,7 @@ async function handleCreateBranch(input) {
 
   console.log(`\n🌿 Creating branch ${branch}...\n`);
   try {
-    execSync(`git switch -c ${branch}`, { encoding: 'utf-8', stdio: 'pipe' });
+    runCommand(`git switch -c ${branch}`);
     console.log(c.green(`✔ Switched to new branch: ${branch}\n`));
   } catch (e) {
     const outMsg = (e.stdout || '') + '\n' + (e.stderr || '') + '\n' + e.message;
@@ -322,12 +340,10 @@ async function handlePushSafe(input) {
 
   try {
     // Check if inside git repo
-    execSync('git rev-parse --is-inside-work-tree', { stdio: 'ignore' });
+    runCommand('git rev-parse --is-inside-work-tree', { stdio: 'ignore' });
 
     // Get current branch
-    const currentBranch = execSync('git branch --show-current', {
-      encoding: 'utf-8'
-    }).trim();
+    const currentBranch = runCommand('git branch --show-current').trim();
 
     // Extract branch from input (optional)
     let branch = currentBranch;
@@ -343,11 +359,11 @@ async function handlePushSafe(input) {
 
     try {
       // Try normal push
-      execSync(`git push`, { stdio: 'inherit' });
+      runCommand(`git push`, { stdio: 'inherit' });
     } catch {
       // First-time push → set upstream
       console.log('🔗 First push detected. Setting upstream...\n');
-      execSync(`git push -u origin ${branch}`, { stdio: 'inherit' });
+      runCommand(`git push -u origin ${branch}`, { stdio: 'inherit' });
     }
 
     console.log(`\n✔ Branch '${branch}' pushed successfully\n`);
@@ -425,14 +441,14 @@ async function promptForCloneDestination() {
 // ── Auto-detect local Git repository ────────────────────────────
 function detectLocalGit() {
   try {
-    execSync('git rev-parse --is-inside-work-tree', { stdio: 'pipe' });
+    runCommand('git rev-parse --is-inside-work-tree');
     let repoName = null;
     let branch   = null;
     let hasRemote = false;
     // folder name as reliable fallback
-    const folderName = path.basename(execSync('git rev-parse --show-toplevel', { stdio: 'pipe', encoding: 'utf-8' }).trim());
+    const folderName = path.basename(runCommand('git rev-parse --show-toplevel').trim());
     try {
-      const remoteUrl = execSync('git config --get remote.origin.url', { stdio: 'pipe', encoding: 'utf-8' }).trim();
+      const remoteUrl = runCommand('git config --get remote.origin.url').trim();
       if (remoteUrl) {
         hasRemote = true;
         const parts = remoteUrl.split('/');
@@ -440,7 +456,7 @@ function detectLocalGit() {
       }
     } catch {}
     try {
-      branch = execSync('git branch --show-current', { stdio: 'pipe', encoding: 'utf-8' }).trim() || null;
+      branch = runCommand('git branch --show-current').trim() || null;
     } catch {}
     return { found: true, repoName: repoName || folderName, folderName, branch, hasRemote };
   } catch {
@@ -572,6 +588,33 @@ export async function runRepl(config, flags = {}) {
     
     if (lowerInput.startsWith('cherry pick')) {
       await handleCherryPick(input, rl);
+      continue;
+    }
+
+    if (lowerInput === 'logout' || lowerInput === 'log out') {
+      if (config.github) {
+        config.github.token = '';
+        saveConfig(config);
+      }
+      console.log('');
+      printInfo('Logged out. Please enter a new token to continue.');
+      authMode = true;
+      continue;
+    }
+
+    if (lowerInput === 'login' || lowerInput === 'log in' || lowerInput === 'authenticate') {
+      console.log('');
+      printInfo('Authentication mode enabled.');
+      authMode = true;
+      continue;
+    }
+
+    if (
+      lowerInput === 'initialize project' ||
+      lowerInput === 'init project' ||
+      lowerInput.startsWith('initialize project ')
+    ) {
+      await promptProjectInit(process.cwd());
       continue;
     }
 
@@ -964,7 +1007,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       const repoUrl = `https://github.com/${username}/${repoName}.git`;
 
       try {
-        execSync(`git clone ${repoUrl} "${targetFolder}"`, { stdio: 'pipe' });
+        runCommand(`git clone ${repoUrl} "${targetFolder}"`);
         cloneSpinner.stopAndClear();
         
         console.log('');
@@ -1047,7 +1090,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
       await sleep(200);
 
       try {
-        execSync('git add .', { stdio: 'pipe' });
+        runCommand('git add .');
       } catch (e) {
         execSpinner.fail('Stage failed');
         printError('Failed to stage files: ' + e.message);
@@ -1059,7 +1102,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
       let commitOutput = '';
       try {
-        commitOutput = execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { stdio: 'pipe', encoding: 'utf-8' });
+        commitOutput = runCommand(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`);
       } catch (e) {
         const outMsg = (e.stdout?.toString() || '') + (e.stderr?.toString() || '') + e.message;
         if (outMsg.includes('nothing to commit')) {
@@ -1110,7 +1153,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
           if (username && repoLabel) {
             const remoteUrl = `https://github.com/${username}/${repoLabel}.git`;
             try {
-              execSync(`git remote add origin ${remoteUrl}`, { stdio: 'pipe' });
+              runCommand(`git remote add origin ${remoteUrl}`);
               printSuccess(`Remote linked: ${remoteUrl}`);
               console.log('');
             } catch (e) {
@@ -1139,7 +1182,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
       let pushOutput = '';
       try {
-        pushOutput = execSync('git push', { stdio: 'pipe', encoding: 'utf-8' });
+        pushOutput = runCommand('git push');
       } catch (e) {
         const stderr = e.stderr?.toString() || e.message;
         execSpinner.fail('Push failed');
@@ -1212,7 +1255,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
 
       let pullOutput = '';
       try {
-        pullOutput = execSync('git pull', { stdio: 'pipe', encoding: 'utf-8' });
+        pullOutput = runCommand('git pull');
       } catch (e) {
         const stderr = e.stderr?.toString() || e.message;
         execSpinner.stopAndClear();
@@ -1279,7 +1322,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
           if (username && repoLabel) {
             const remoteUrl = `https://github.com/${username}/${repoLabel}.git`;
             try {
-              execSync(`git remote add origin ${remoteUrl}`, { stdio: 'pipe' });
+              runCommand(`git remote add origin ${remoteUrl}`);
               printSuccess(`Remote linked: ${remoteUrl}`);
               console.log('  ' + c.dim('Please push your branch before creating a PR.'));
               console.log('');
@@ -1410,7 +1453,7 @@ export async function processNaturalLanguage(input, config, session, flags = {},
                 cloneSpinner.text('🚀 Cloning repository...');
 
                 try {
-                  execSync(`git clone ${cloneUrl} "${targetFolder}"`, { stdio: 'pipe' });
+                  runCommand(`git clone ${cloneUrl} "${targetFolder}"`);
                   cloneSpinner.stopAndClear();
                   console.log('');
                   console.log('  ' + c.bold(c.green('✔ Clone completed successfully')));
