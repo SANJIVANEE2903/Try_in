@@ -31,6 +31,7 @@ export default function AIConsole() {
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -48,7 +49,7 @@ export default function AIConsole() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:8000/api/chat", {
+      const response = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: input }),
