@@ -80,17 +80,37 @@ def dispatch_github_action(token: str, action: str, params: dict) -> dict:
             
     elif action == "list_repos":
         resp = requests.get(
-            "https://api.github.com/user/repos?sort=updated&per_page=10",
+            "https://api.github.com/user/repos?sort=updated&per_page=30",
             headers=headers
         )
         if resp.status_code == 200:
-            repos = [{"name": r["name"], "url": r["html_url"], "private": r["private"]} for r in resp.json()]
-            msg = f"Found {len(repos)} repositories."
-            db.add_log("list_repos", msg)
+            repos = [
+                {
+                    "name": r["name"],
+                    "url": r["html_url"],
+                    "private": r["private"],
+                    "stars": r.get("stargazers_count", 0),
+                    "language": r.get("language") or "Unknown"
+                }
+                for r in resp.json()
+            ]
+            # Build a readable list of repo names for the message
+            names_list = "\n".join(
+                f"  {'🔒' if r['private'] else '🌐'} {r['name']} ({r['language']}, ⭐{r['stars']})"
+                for r in repos
+            )
+            msg = f"✅ Found {len(repos)} repositories:\n{names_list}"
+            db.add_log("list_repos", f"Listed {len(repos)} repositories")
             return {
                 "status": "success",
                 "message": msg,
                 "data": {"repos": repos}
+            }
+        elif resp.status_code == 401:
+            return {
+                "status": "error",
+                "message": "GitHub Authentication Failed (401). Please run 'repoforge chat' to re-authenticate.",
+                "data": None
             }
         else:
             return {
