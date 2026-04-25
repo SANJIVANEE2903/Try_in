@@ -1,24 +1,67 @@
 "use client";
 
-import { signIn, getProviders } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Github, Mail, Shield, Loader2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const handleSignIn = async (provider: "github" | "google") => {
-    setLoading(provider);
-    await signIn(provider, { callbackUrl: "/dashboard" });
+  const handleEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setLoading("email");
+
+    try {
+      if (mode === "signup") {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/dashboard` },
+        });
+        if (error) throw error;
+        setSuccess("✅ Check your email for a confirmation link!");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        router.push("/dashboard");
+      }
+    } catch (err: any) {
+      setError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setError("");
+    setLoading("google");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/dashboard` },
+    });
+    if (error) {
+      setError(error.message);
+      setLoading(null);
+    }
   };
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Background */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(0,229,255,0.08),transparent_60%)] pointer-events-none" />
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-accent/10 rounded-full blur-3xl -z-10" />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl -z-10" />
+      <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-accent/10 rounded-full blur-[120px] -z-10 pointer-events-none" />
+      <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-indigo-500/10 rounded-full blur-[120px] -z-10 pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -26,35 +69,25 @@ export default function LoginPage() {
         className="w-full max-w-md"
       >
         {/* Logo */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 border border-accent/20 mb-6">
-            <Shield size={32} className="text-accent" />
-          </div>
-          <h1 className="text-3xl font-bold text-white font-outfit tracking-tight">Welcome to RepoForge</h1>
-          <p className="text-slate-400 mt-2 text-sm">Sign in to manage your GitHub with natural language</p>
+        <div className="text-center mb-8">
+          <Link href="/" className="inline-flex items-center gap-2 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-accent-foreground font-bold text-lg">R</div>
+            <span className="text-2xl font-bold text-white font-outfit">RepoForge</span>
+          </Link>
+          <h1 className="text-3xl font-bold text-white tracking-tight">
+            {mode === "login" ? "Welcome back" : "Create your account"}
+          </h1>
+          <p className="text-slate-400 mt-2 text-sm">
+            {mode === "login" ? "Sign in to manage your repos" : "Start managing GitHub with AI"}
+          </p>
         </div>
 
-        {/* Auth Card */}
-        <div className="glass-card p-8 space-y-4">
-          {/* GitHub Login */}
+        <div className="bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-8 space-y-5">
+          {/* Google OAuth */}
           <button
-            onClick={() => handleSignIn("github")}
+            onClick={handleGoogle}
             disabled={loading !== null}
-            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 hover:border-white/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {loading === "github" ? (
-              <Loader2 size={20} className="animate-spin" />
-            ) : (
-              <Github size={20} />
-            )}
-            Continue with GitHub
-          </button>
-
-          {/* Google Login */}
-          <button
-            onClick={() => handleSignIn("google")}
-            disabled={loading !== null}
-            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-white/5 border border-white/10 text-white font-semibold hover:bg-white/10 hover:border-white/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl bg-white text-slate-900 font-semibold hover:bg-white/90 transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
           >
             {loading === "google" ? (
               <Loader2 size={20} className="animate-spin" />
@@ -69,25 +102,91 @@ export default function LoginPage() {
             Continue with Google
           </button>
 
-          <div className="relative py-2">
+          {/* Divider */}
+          <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/5"></div>
+              <div className="w-full border-t border-white/10" />
             </div>
-            <div className="relative flex justify-center text-xs text-slate-600">
-              <span className="bg-slate-900 px-3">SECURED BY OAUTH 2.0</span>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-slate-900 px-3 text-slate-500">or continue with email</span>
             </div>
           </div>
 
-          <p className="text-center text-xs text-slate-600 leading-relaxed">
-            By signing in, you agree to our{" "}
-            <span className="text-slate-400 hover:text-accent cursor-pointer transition-colors">Terms of Service</span>
-            {" "}and{" "}
-            <span className="text-slate-400 hover:text-accent cursor-pointer transition-colors">Privacy Policy</span>.
+          {/* Error / Success */}
+          {error && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              {error}
+            </div>
+          )}
+          {success && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+              {success}
+            </div>
+          )}
+
+          {/* Email / Password Form */}
+          <form onSubmit={handleEmail} className="space-y-4">
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
+              />
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input
+                type={showPass ? "text" : "password"}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={6}
+                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-12 pr-12 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-accent/50 transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(!showPass)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+              >
+                {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading !== null}
+              className="w-full py-3.5 rounded-xl bg-accent text-accent-foreground font-bold hover:brightness-110 transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-accent/20"
+            >
+              {loading === "email" ? (
+                <Loader2 size={20} className="animate-spin mx-auto" />
+              ) : mode === "login" ? (
+                "Sign In"
+              ) : (
+                "Create Account"
+              )}
+            </button>
+          </form>
+
+          {/* Toggle mode */}
+          <p className="text-center text-sm text-slate-500">
+            {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
+            <button
+              onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setSuccess(""); }}
+              className="text-accent hover:underline font-medium"
+            >
+              {mode === "login" ? "Sign up" : "Sign in"}
+            </button>
           </p>
         </div>
 
-        <p className="text-center text-xs text-slate-600 mt-6">
-          Your GitHub token is encrypted and never stored in plain text.
+        <p className="text-center text-xs text-slate-600 mt-6 flex items-center justify-center gap-2">
+          <ShieldCheck size={12} className="text-emerald-500" />
+          Secured by Supabase · Your data is always encrypted
         </p>
       </motion.div>
     </div>

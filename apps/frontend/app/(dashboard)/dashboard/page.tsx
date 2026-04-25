@@ -1,60 +1,75 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import { 
-  GitBranch, 
-  GitCommit, 
-  Star, 
-  Users, 
-  Plus, 
-  ExternalLink,
-  ChevronRight,
-  RefreshCcw,
-  Activity as ActivityIcon
+  GitBranch, GitCommit, Star, Users, Plus, ExternalLink,
+  ChevronRight, RefreshCcw, Activity as ActivityIcon,
+  Terminal, Globe, CheckCircle, XCircle
 } from "lucide-react";
+import Link from "next/link";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+interface LogEntry {
+  id?: number;
+  timestamp?: string;
+  action?: string;
+  message: string;
+  source?: string;
+  github_user?: string;
+  status?: string;
+}
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ repos: 0, commits: 0, prs: 0 });
-  const [logs, setLogs] = useState<string[]>([]);
+  const [stats, setStats] = useState({ repos: 0, commits: 0, prs: 0, total_actions: 0 });
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchData = async () => {
     setIsRefreshing(true);
     try {
-      const statsRes = await fetch("http://localhost:8000/api/stats");
-      const statsData = await statsRes.json();
-      setStats(statsData);
+      const [statsRes, logsRes] = await Promise.all([
+        fetch(`${API_URL}/api/stats`),
+        fetch(`${API_URL}/api/logs?limit=10`),
+      ]);
 
-      const logsRes = await fetch("http://localhost:8000/api/logs");
-      const logsData = await logsRes.json();
-      setLogs(logsData.logs || []);
-    } catch (err) {
-      console.error("Fetch failed", err);
+      if (statsRes.ok) setStats(await statsRes.json());
+
+      if (logsRes.ok) {
+        const logsData = await logsRes.json();
+        const rawLogs: any[] = logsData.logs || [];
+        // Normalize: handle both old string[] and new object[] formats
+        const normalized: LogEntry[] = rawLogs.map((l, i) =>
+          typeof l === "string"
+            ? { id: i, message: l, source: "cli", status: "success" }
+            : l
+        );
+        setLogs(normalized);
+      }
+    } catch {
+      // Backend not available — silent fail
     } finally {
       setIsRefreshing(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  useEffect(() => { fetchData(); }, []);
 
   const cards = [
     { name: "Total Repos", value: stats.repos, icon: GitBranch, color: "text-blue-400", bg: "bg-blue-400/10" },
     { name: "Total Commits", value: stats.commits, icon: GitCommit, color: "text-emerald-400", bg: "bg-emerald-400/10" },
     { name: "Open PRs", value: stats.prs, icon: Star, color: "text-amber-400", bg: "bg-amber-400/10" },
-    { name: "Contributors", value: "12", icon: Users, color: "text-purple-400", bg: "bg-purple-400/10" },
+    { name: "Total Actions", value: stats.total_actions ?? 0, icon: Users, color: "text-purple-400", bg: "bg-purple-400/10" },
   ];
 
   return (
-    <div className="p-8 space-y-10">
+    <div className="p-4 md:p-8 space-y-10">
       <div className="flex items-end justify-between">
-        <div className="flex flex-col gap-2">
+        <div>
           <h1 className="text-4xl font-bold font-outfit text-white tracking-tight">Overview</h1>
-          <p className="text-slate-400">Welcome back. Here is what is happening with your repositories.</p>
+          <p className="text-slate-400 mt-1">Welcome back. Here is what is happening with your repositories.</p>
         </div>
-        <button 
+        <button
           onClick={fetchData}
           disabled={isRefreshing}
           className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-400 hover:text-white transition-all disabled:opacity-50"
@@ -63,60 +78,75 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {cards.map((card, i) => (
-          <motion.div
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+        {cards.map((card) => (
+          <div
             key={card.name}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="glass-card p-6 flex flex-col gap-4 group hover:border-accent/30 transition-all duration-300"
+            className="glass-card p-5 md:p-6 flex flex-col gap-4 hover:border-white/10 transition-all duration-300"
           >
             <div className={`w-12 h-12 ${card.bg} rounded-xl flex items-center justify-center ${card.color}`}>
               <card.icon size={24} />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-400">{card.name}</p>
-              <h3 className="text-3xl font-bold text-white mt-1 tracking-tight">{card.value}</h3>
+              <p className="text-xs md:text-sm font-medium text-slate-400">{card.name}</p>
+              <h3 className="text-2xl md:text-3xl font-bold text-white mt-1 tracking-tight">{card.value}</h3>
             </div>
-          </motion.div>
+          </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
+        {/* Recent Activity */}
+        <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               Recent Activity
               <span className="px-2 py-0.5 bg-accent/10 text-accent text-[10px] rounded-full uppercase tracking-widest font-bold border border-accent/20">Live</span>
             </h2>
-            <button className="text-sm text-accent hover:underline flex items-center gap-1 font-medium">
+            <Link href="/activity" className="text-sm text-accent hover:underline flex items-center gap-1 font-medium">
               View All <ChevronRight size={14} />
-            </button>
+            </Link>
           </div>
 
           <div className="glass-card divide-y divide-white/5 overflow-hidden">
             {logs.length > 0 ? (
               logs.map((log, i) => (
-                <div key={i} className="p-4 hover:bg-white/[0.02] transition-colors flex items-start gap-4">
+                <div key={log.id ?? i} className="p-4 hover:bg-white/[0.02] transition-colors flex items-start gap-3">
                   <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <ActivityIcon className="text-slate-400" size={16} />
+                    {log.source === "web"
+                      ? <Globe size={14} className="text-emerald-400" />
+                      : <Terminal size={14} className="text-indigo-400" />
+                    }
                   </div>
-                  <p className="text-sm text-slate-300 leading-relaxed font-mono">{log}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-300 leading-relaxed font-mono truncate">
+                      {String(log.message)}
+                    </p>
+                    {log.timestamp && (
+                      <p className="text-[10px] text-slate-600 mt-1">{log.timestamp}</p>
+                    )}
+                  </div>
+                  {log.status === "error"
+                    ? <XCircle size={14} className="text-red-400 mt-1 flex-shrink-0" />
+                    : <CheckCircle size={14} className="text-emerald-400 mt-1 flex-shrink-0" />
+                  }
                 </div>
               ))
             ) : (
               <div className="p-12 text-center text-slate-500">
-                <p>No recent activity detected from CLI.</p>
+                <ActivityIcon size={32} className="mx-auto mb-3 opacity-20" />
+                <p className="text-sm">No activity yet. Use the CLI or AI Console to get started.</p>
               </div>
             )}
           </div>
         </div>
 
-        <div className="space-y-6">
+        {/* Quick Actions */}
+        <div className="space-y-4">
           <h2 className="text-xl font-bold text-white">Quick Actions</h2>
           <div className="grid gap-4">
-            <button className="glass-card p-5 text-left flex items-center justify-between group hover:bg-accent/5 hover:border-accent/20">
+            <Link href="/console" className="glass-card p-5 text-left flex items-center justify-between group hover:bg-accent/5 hover:border-accent/20 transition-all">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center text-accent">
                   <Plus size={20} />
@@ -127,9 +157,9 @@ export default function Dashboard() {
                 </div>
               </div>
               <ChevronRight size={16} className="text-slate-600 group-hover:text-accent group-hover:translate-x-1 transition-all" />
-            </button>
+            </Link>
 
-            <button className="glass-card p-5 text-left flex items-center justify-between group hover:bg-emerald-500/5 hover:border-emerald-500/20">
+            <Link href="/console" className="glass-card p-5 text-left flex items-center justify-between group hover:bg-emerald-500/5 hover:border-emerald-500/20 transition-all">
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
                   <ExternalLink size={20} />
@@ -140,7 +170,20 @@ export default function Dashboard() {
                 </div>
               </div>
               <ChevronRight size={16} className="text-slate-600 group-hover:text-emerald-500 group-hover:translate-x-1 transition-all" />
-            </button>
+            </Link>
+
+            <Link href="/docs" className="glass-card p-5 text-left flex items-center justify-between group hover:bg-indigo-500/5 hover:border-indigo-500/20 transition-all">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                  <GitBranch size={20} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">Documentation</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Learn all commands</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="text-slate-600 group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />
+            </Link>
           </div>
         </div>
       </div>
