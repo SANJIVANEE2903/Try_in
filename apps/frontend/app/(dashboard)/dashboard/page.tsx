@@ -23,6 +23,7 @@ interface LogEntry {
 export default function Dashboard() {
   const [stats, setStats] = useState({ repos: 0, commits: 0, prs: 0, total_actions: 0 });
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
   const fetchData = async () => {
