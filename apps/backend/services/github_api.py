@@ -94,12 +94,19 @@ def dispatch_github_action(token: str, action: str, params: dict) -> dict:
                 }
                 for r in resp.json()
             ]
-            # Build a readable list of repo names for the message
-            names_list = "\n".join(
-                f"  {'🔒' if r['private'] else '🌐'} {r['name']} ({r['language']}, ⭐{r['stars']})"
-                for r in repos
-            )
-            msg = f"✅ Found {len(repos)} repositories:\n{names_list}"
+            # Build a neat, table-like list
+            header = f"{'Type':<6} | {'Name':<30} | {'Lang':<12} | {'Stars':<5}"
+            separator = "-" * len(header)
+            
+            rows = []
+            for r in repos:
+                v_icon = "🔒" if r["private"] else "🌐"
+                name = (r["name"][:27] + "...") if len(r["name"]) > 30 else r["name"]
+                lang = (r["language"][:10] + "..") if len(r["language"]) > 12 else r["language"]
+                rows.append(f"{v_icon:<4} | {name:<30} | {lang:<12} | ⭐{r['stars']}")
+            
+            names_list = "\n".join(rows)
+            msg = f"✅ Found {len(repos)} repositories:\n\n{header}\n{separator}\n{names_list}"
             db.add_log("list_repos", f"Listed {len(repos)} repositories")
             return {
                 "status": "success",
@@ -239,10 +246,45 @@ def dispatch_github_action(token: str, action: str, params: dict) -> dict:
                 return {"status": "error", "message": f"Repo '{name}' not found for health check.", "data": None}
             return {"status": "error", "message": "Failed to authenticate.", "data": None}
             
-        if action == "issue_create": msg = f"Created issue: {params.get('title')}"
-        elif action == "issue_list": msg = "Listed open issues."
-        elif action == "pr_create": msg = "Created a Pull Request."
-        elif action == "fork_repo": msg = f"Forked repository: {params.get('name')}"
+        user_resp = requests.get("https://api.github.com/user", headers=headers)
+        if user_resp.status_code != 200:
+            return {"status": "error", "message": "Failed to authenticate with GitHub.", "data": None}
+        owner = user_resp.json().get("login")
+
+        if action == "issue_create":
+            # We need a repo name. Default to the current one or first one found
+            repo_name = params.get("repo")
+            if not repo_name:
+                # Try to get the last repository used or just ask for it
+                return {"status": "error", "message": "Please specify the repository name to create an issue (e.g., 'create issue for my-repo').", "data": None}
+            
+            payload = {"title": params.get("title", "New Issue"), "body": "Created via RepoForge AI Console"}
+            resp = requests.post(f"https://api.github.com/repos/{owner}/{repo_name}/issues", headers=headers, json=payload)
+            if resp.status_code == 201:
+                msg = f"✅ Issue created in '{repo_name}': {params.get('title')}"
+                db.add_log("issue_create", msg)
+                return {"status": "success", "message": msg, "data": resp.json()}
+            return {"status": "error", "message": f"Failed to create issue. {resp.text}", "data": None}
+
+        elif action == "issue_list":
+            repo_name = params.get("repo")
+            if not repo_name:
+                return {"status": "error", "message": "Please specify the repository name to list issues.", "data": None}
+            
+            resp = requests.get(f"https://api.github.com/repos/{owner}/{repo_name}/issues", headers=headers)
+            if resp.status_code == 200:
+                issues = resp.json()
+                if not issues:
+                    msg = f"No open issues found in '{repo_name}'."
+                else:
+                    issue_list = "\n".join([f"  #{i['number']} - {i['title']}" for i in issues[:5]])
+                    msg = f"📝 Recent open issues in '{repo_name}':\n{issue_list}"
+                db.add_log("issue_list", msg)
+                return {"status": "success", "message": msg, "data": issues}
+            return {"status": "error", "message": f"Failed to list issues. {resp.text}", "data": None}
+
+        elif action == "pr_create": msg = "🚀 Pull Request creation mapped. Ready to implement branch logic."
+        elif action == "fork_repo": msg = f"🍴 Forked repository: {params.get('name')} (Mocked)"
         
         db.add_log(action, msg)
         return {"status": "success", "message": msg, "data": None}

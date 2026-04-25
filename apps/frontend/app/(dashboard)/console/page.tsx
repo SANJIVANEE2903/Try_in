@@ -128,7 +128,7 @@ export default function AIConsole() {
                   {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
                 </div>
                 <div className={cn(
-                  "px-4 py-3 rounded-2xl text-sm leading-relaxed",
+                  "px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap font-mono",
                   msg.role === 'user' 
                     ? "bg-accent text-accent-foreground font-bold" 
                     : cn(

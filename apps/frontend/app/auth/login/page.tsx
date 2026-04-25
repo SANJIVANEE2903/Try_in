@@ -44,14 +44,25 @@ export default function LoginPage() {
   };
 
   const handleGoogle = async () => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")) {
+      setError("Supabase is not configured. Please add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to your environment variables.");
+      return;
+    }
+
     setError("");
     setLoading("google");
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard` },
-    });
-    if (error) {
-      setError("Google sign-in failed: " + error.message);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/dashboard` },
+      });
+      if (error) {
+        setError("Google sign-in failed: " + error.message);
+        setLoading(null);
+      }
+    } catch (err: any) {
+      setError("An unexpected error occurred during Google sign-in. Check your browser console.");
+      console.error(err);
       setLoading(null);
     }
   };

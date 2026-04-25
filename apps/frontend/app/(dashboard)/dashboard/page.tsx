@@ -23,31 +23,38 @@ interface LogEntry {
 export default function Dashboard() {
   const [stats, setStats] = useState({ repos: 0, commits: 0, prs: 0, total_actions: 0 });
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   const fetchData = async () => {
     setIsRefreshing(true);
+    setIsOffline(false);
     try {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
       const [statsRes, logsRes] = await Promise.all([
-        fetch(`${API_URL}/api/stats`),
-        fetch(`${API_URL}/api/logs?limit=10`),
-      ]);
+        fetch(`${API_URL}/api/stats`, { signal: controller.signal }),
+        fetch(`${API_URL}/api/logs?limit=10`, { signal: controller.signal }),
+      ]).catch(() => {
+        setIsOffline(true);
+        return [null, null];
+      });
+      
+      clearTimeout(id);
 
-      if (statsRes.ok) setStats(await statsRes.json());
-
-      if (logsRes.ok) {
+      if (statsRes && statsRes.ok) setStats(await statsRes.json());
+      if (logsRes && logsRes.ok) {
         const logsData = await logsRes.json();
         const rawLogs: any[] = logsData.logs || [];
-        // Normalize: handle both old string[] and new object[] formats
         const normalized: LogEntry[] = rawLogs.map((l, i) =>
-          typeof l === "string"
-            ? { id: i, message: l, source: "cli", status: "success" }
-            : l
+          typeof l === "string" ? { id: i, message: l, source: "cli", status: "success" } : l
         );
         setLogs(normalized);
+      } else if (!statsRes) {
+        setIsOffline(true);
       }
-    } catch {
-      // Backend not available — silent fail
+    } catch (err) {
+      setIsOffline(true);
     } finally {
       setIsRefreshing(false);
     }
@@ -66,8 +73,18 @@ export default function Dashboard() {
     <div className="p-4 md:p-8 space-y-10">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-4xl font-bold font-outfit text-white tracking-tight">Overview</h1>
-          <p className="text-slate-400 mt-1">Welcome back. Here is what is happening with your repositories.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold font-outfit text-white tracking-tight">Overview</h1>
+            {isOffline && (
+              <span className="px-2 py-1 bg-red-500/10 border border-red-500/20 text-red-500 text-[10px] font-bold uppercase rounded-md">Offline</span>
+            )}
+          </div>
+          <p className="text-slate-400 mt-1">
+            {isOffline 
+              ? "Backend is unreachable. Please ensure the local server is running on port 8000."
+              : "Welcome back. Here is what is happening with your repositories."
+            }
+          </p>
         </div>
         <button
           onClick={fetchData}
