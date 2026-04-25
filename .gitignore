@@ -62,6 +62,7 @@ env/
 .env
 .env.local
 .env.production
+.env*.local
 
 # Next.js
 apps/frontend/.next/

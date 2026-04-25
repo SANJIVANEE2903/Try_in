@@ -39,10 +39,10 @@ export default function LandingPage() {
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-400">
           <a href="#features" className="hover:text-white transition-colors">Features</a>
           <a href="#how-it-works" className="hover:text-white transition-colors">How it Works</a>
-          <Link href="/auth/github" className="bg-white/5 border border-white/10 px-5 py-2 rounded-xl text-white hover:bg-white/10 transition-all">
+          <Link href="/auth/login" className="bg-white/5 border border-white/10 px-5 py-2 rounded-xl text-white hover:bg-white/10 transition-all">
             Sign In
           </Link>
-          <Link href="/auth/github" className="bg-accent text-accent-foreground px-5 py-2 rounded-xl font-bold hover:brightness-110 transition-all shadow-lg shadow-accent/20">
+          <Link href="/auth/login" className="bg-accent text-accent-foreground px-5 py-2 rounded-xl font-bold hover:brightness-110 transition-all shadow-lg shadow-accent/20">
             Get Started
           </Link>
         </div>
@@ -65,10 +65,10 @@ export default function LandingPage() {
             <a href="#features" onClick={() => setIsMenuOpen(false)} className="text-slate-300 font-medium">Features</a>
             <a href="#how-it-works" onClick={() => setIsMenuOpen(false)} className="text-slate-300 font-medium">How it Works</a>
             <div className="flex flex-col gap-3 pt-4 border-t border-white/5">
-              <Link href="/auth/github" className="w-full py-3 text-center rounded-xl bg-white/5 text-white font-bold border border-white/10">
+              <Link href="/auth/login" className="w-full py-3 text-center rounded-xl bg-white/5 text-white font-bold border border-white/10">
                 Sign In
               </Link>
-              <Link href="/auth/github" className="w-full py-3 text-center rounded-xl bg-accent text-accent-foreground font-bold shadow-lg shadow-accent/20">
+              <Link href="/auth/login" className="w-full py-3 text-center rounded-xl bg-accent text-accent-foreground font-bold shadow-lg shadow-accent/20">
                 Get Started
               </Link>
             </div>
@@ -111,7 +111,7 @@ export default function LandingPage() {
           transition={{ delay: 0.3 }}
           className="flex flex-col sm:flex-row gap-4 w-full justify-center"
         >
-          <Link href="/auth/github" className="bg-accent text-accent-foreground px-8 py-4 rounded-2xl font-bold text-lg hover:scale-105 transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-2">
+          <Link href="/auth/login" className="bg-accent text-accent-foreground px-8 py-4 rounded-2xl font-bold text-lg hover:scale-105 transition-all shadow-xl shadow-accent/20 flex items-center justify-center gap-2">
             Get Started for Free <ChevronRight size={20} />
           </Link>
           <Link href="/docs" className="bg-slate-900 border border-white/10 px-8 py-4 rounded-2xl font-bold text-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2">

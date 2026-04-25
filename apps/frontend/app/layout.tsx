@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { NextAuthProvider } from "@/components/NextAuthProvider";
 import "./globals.css";
 
 const inter = Inter({ 
@@ -35,10 +36,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${outfit.variable} font-sans antialiased`}>
-        <ThemeProvider>
-          {children}
-        </ThemeProvider>
-      </body>
+          <NextAuthProvider>
+            <ThemeProvider>
+              {children}
+            </ThemeProvider>
+          </NextAuthProvider>
+        </body>
     </html>
   );
 }

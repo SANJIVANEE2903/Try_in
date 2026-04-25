@@ -14,6 +14,20 @@ def get_fallback_token():
             return None
     return None
 
+def get_github_user(token: str) -> str:
+    """Resolve GitHub username from token for audit logging"""
+    try:
+        resp = requests.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"token {token}"},
+            timeout=5
+        )
+        if resp.status_code == 200:
+            return resp.json().get("login", "unknown")
+    except:
+        pass
+    return "unknown"
+
 def dispatch_github_action(token: str, action: str, params: dict) -> dict:
     # Use fallback if token is dummy or missing
     if not token or token == "demo-token":

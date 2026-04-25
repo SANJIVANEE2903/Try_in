@@ -83,7 +83,7 @@ export function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsOpen: (v:
             </div>
           </div>
           <Link 
-            href="/"
+            href="/auth/logout"
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-all group"
           >
             <LogOut size={18} className="group-hover:translate-x-1 transition-transform" />
